@@ -43,6 +43,63 @@ export const login = async (req, res) => {
   });
 };
 
+export const googleAuth = async (req, res) => {
+  let { credential, email, name, googleId, picture } = req.body;
+
+  // Decode Google ID Token if passed as credential
+  if (credential) {
+    try {
+      const parts = credential.split(".");
+      if (parts.length === 3) {
+        const payload = JSON.parse(Buffer.from(parts[1], "base64").toString("utf8"));
+        email = payload.email || email;
+        name = payload.name || name;
+        googleId = payload.sub || googleId;
+        picture = payload.picture || picture;
+      }
+    } catch (e) {
+      console.warn("[AuthController] Could not decode Google credential token:", e.message);
+    }
+  }
+
+  if (!email) {
+    return res.status(400).json({ message: "Email is required for Google authentication" });
+  }
+
+  const cleanEmail = email.trim().toLowerCase();
+  let user = await User.findOne({ email: cleanEmail });
+  let isNewUser = false;
+
+  if (!user) {
+    // Generate secure random password for OAuth created account
+    const randomPassword = crypto.randomBytes(16).toString("hex");
+    user = await User.create({
+      name: name?.trim() || cleanEmail.split("@")[0],
+      email: cleanEmail,
+      password: randomPassword,
+      role: "customer",
+    });
+    isNewUser = true;
+
+    // Send Welcome Email in background
+    sendWelcomeEmail({ user }).catch((err) =>
+      console.error("[AuthController] Error sending welcome email:", err)
+    );
+  } else if (name && (!user.name || user.name === cleanEmail.split("@")[0])) {
+    user.name = name.trim();
+    await user.save();
+  }
+
+  return res.status(isNewUser ? 201 : 200).json({
+    user: user.toSafeObject(),
+    token: generateToken(user._id),
+    isNewUser,
+    message: isNewUser
+      ? "Account created with Google — welcome to The Ribbon Story!"
+      : "Welcome back!",
+  });
+};
+
 export const getMe = async (req, res) => {
   const user = await User.findById(req.user._id);
   return res.json({ user: user.toSafeObject() });

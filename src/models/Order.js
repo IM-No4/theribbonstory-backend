@@ -11,6 +11,16 @@ const orderItemSchema = new mongoose.Schema(
     customization: {
       photoUrl: String,
       note: String,
+      reference3D: {
+        sessionId: String,
+        front: String,
+        left: String,
+        right: String,
+        back: String,
+        zipUrl: String,
+        status: String,
+        generatedAt: Date,
+      },
     },
   },
   { _id: false }

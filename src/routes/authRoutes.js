@@ -2,6 +2,7 @@ import express from "express";
 import {
   register,
   login,
+  googleAuth,
   getMe,
   addAddress,
   deleteAddress,
@@ -17,6 +18,7 @@ const router = express.Router();
 
 router.post("/register", asyncHandler(register));
 router.post("/login", asyncHandler(login));
+router.post("/google", asyncHandler(googleAuth));
 router.post("/forgot-password", asyncHandler(forgotPassword));
 router.post("/reset-password/:token", asyncHandler(resetPassword));
 router.post("/set-password", asyncHandler(requestSetPassword));

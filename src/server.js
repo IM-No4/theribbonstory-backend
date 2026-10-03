@@ -21,10 +21,12 @@ import couponRoutes from "./routes/couponRoutes.js";
 import reviewRoutes from "./routes/reviewRoutes.js";
 import shippingRoutes from "./routes/shippingRoutes.js";
 import contactRoutes from "./routes/contactRoutes.js";
-
-dotenv.config();
+import reference3dRoutes from "./routes/reference3dRoutes.js";
+import subscriberRoutes from "./routes/subscriberRoutes.js";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
+dotenv.config({ path: path.join(__dirname, "..", ".env") });
+dotenv.config(); // fallback
 
 const app = express();
 
@@ -64,6 +66,8 @@ const allowedOrigins = (process.env.CLIENT_URL || "")
   .concat([
     "http://localhost:5173",
     "http://127.0.0.1:5173",
+    "http://localhost:5178",
+    "http://127.0.0.1:5178",
     "http://localhost:3000",
     "https://theribbonstory.com",
     "https://www.theribbonstory.com",
@@ -134,6 +138,9 @@ app.use("/api/coupons", couponRoutes);
 app.use("/api/reviews", reviewRoutes);
 app.use("/api/shipping", shippingRoutes);
 app.use("/api/contact", contactRoutes);
+app.use("/api/3d-agent", reference3dRoutes);
+app.use("/api/subscribers", subscriberRoutes);
+app.use("/api/waitlist", subscriberRoutes);
 
 app.use(notFound);
 app.use(errorHandler);

@@ -666,3 +666,59 @@ export const sendWelcomeEmail = async ({ user }) => {
   }
 };
 
+/**
+ * 11. Coming Soon VIP Waitlist Acknowledgment Email
+ */
+export const sendLaunchWaitlistEmail = async ({ email }) => {
+  try {
+    const mailClient = getTransporter("CONTACT");
+
+    const content = `
+      <div style="margin-bottom: 20px;">
+        <span class="badge">VIP Early Access • Launch List</span>
+      </div>
+      <h2 class="heading">You're on the VIP Launch List! 🎀</h2>
+      <p>Hello,</p>
+      <p>Thank you for joining <strong>The Ribbon Story</strong> early access community. We are currently putting the final touches on our bespoke 3D keepsake studio.</p>
+      
+      <div style="background-color: #FAF5F2; border: 1px solid #F3D9DC; border-radius: 16px; padding: 20px; margin: 24px 0; font-size: 13px; line-height: 1.6; color: #4A1F29;">
+        <p style="margin: 0 0 10px 0; font-weight: bold; font-family: 'Playfair Display', Georgia, serif; font-size: 16px;">
+          "Your memories deserve to be kept."
+        </p>
+        <p style="margin: 0; color: #664B52;">
+          As an early subscriber, you will receive priority access when our store officially opens, along with an exclusive launch gift voucher reserved for our founding patrons.
+        </p>
+      </div>
+
+      <p style="font-size: 13px; color: #664B52;">
+        Follow our journey and sneak peeks on Instagram: <a href="https://instagram.com/theribbonstory_official" target="_blank" style="color: #9E3D52; font-weight: 600;">@theribbonstory_official</a>
+      </p>
+    `;
+
+    const html = renderEmailTemplate({
+      title: "You're on the VIP Launch List - The Ribbon Story",
+      preheader: "Thank you for joining The Ribbon Story early access waitlist.",
+      content,
+    });
+
+    // 1. Send confirmation to subscriber
+    await mailClient.sendMail({
+      from: EMAIL_SENDERS.NOREPLY,
+      to: email,
+      subject: "🎀 You're on the VIP Launch List! - The Ribbon Story",
+      html,
+    });
+
+    // 2. Notify admin of new lead
+    await mailClient.sendMail({
+      from: EMAIL_SENDERS.NOREPLY,
+      to: "contact@theribbonstory.com",
+      subject: `✨ New VIP Waitlist Lead: ${email}`,
+      text: `New subscriber joined the Coming Soon waitlist:\n\nEmail: ${email}\nTime: ${new Date().toISOString()}`,
+    });
+  } catch (err) {
+    console.error("[EmailService] Error sending launch waitlist email:", err);
+  }
+};
+
+
