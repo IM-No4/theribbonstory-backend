@@ -1,4 +1,5 @@
 import multer from "multer";
+import sharp from "sharp";
 import path from "path";
 import fs from "fs";
 import { fileURLToPath } from "url";
@@ -63,4 +64,41 @@ export const verifyUploadedImages = (req, res, next) => {
     return res.status(400).json({ message: "Only image files (jpg, png, webp) are allowed" });
   }
   next();
+};
+
+export const UPLOAD_MAX_DIMENSION = 2000;
+export const UPLOAD_WEBP_QUALITY = 85;
+
+/**
+ * Runs after verifyUploadedImages: re-encode each image as WebP, at most
+ * 2000px on its long side, rotated upright from the camera's EXIF
+ * orientation and with all metadata (including phone GPS location)
+ * removed. A 4 MB phone photo typically ends up around 200-400 KB.
+ */
+export const optimizeUploadedImages = async (req, res, next) => {
+  const files = [...new Map([...(req.files || []), ...(req.file ? [req.file] : [])].map((f) => [f.path, f])).values()];
+  try {
+    for (const file of files) {
+      const outName = `${path.parse(file.filename).name}.webp`;
+      const outPath = path.join(path.dirname(file.path), outName);
+      // Write to a temp file first: the input may already be <name>.webp
+      const tmpPath = `${outPath}.tmp`;
+      const info = await sharp(file.path, { failOn: "error" })
+        .rotate()
+        .resize({ width: UPLOAD_MAX_DIMENSION, height: UPLOAD_MAX_DIMENSION, fit: "inside", withoutEnlargement: true })
+        .webp({ quality: UPLOAD_WEBP_QUALITY })
+        .toFile(tmpPath);
+      await fs.promises.rename(tmpPath, outPath);
+      if (outPath !== file.path) fs.unlink(file.path, () => {});
+      Object.assign(file, { filename: outName, path: outPath, mimetype: "image/webp", size: info.size });
+    }
+    next();
+  } catch (err) {
+    files.forEach((f) => {
+      fs.unlink(f.path, () => {});
+      fs.unlink(`${path.join(path.dirname(f.path), path.parse(f.filename).name)}.webp.tmp`, () => {});
+    });
+    console.warn("[Upload] Could not process image:", err.message);
+    res.status(400).json({ message: "This image could not be processed. Please try a different photo." });
+  }
 };

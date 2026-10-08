@@ -11,6 +11,7 @@ import {
   markOrderPaid,
 } from "../services/orderService.js";
 import { isObjectId } from "../utils/security.js";
+import { alertNewOrder, alertCancellation, checkLowStock } from "../services/studioAlerts.js";
 import { findOrderByPublicIdentifier } from "../utils/orderLookup.js";
 import {
   sendRefundNotificationEmail,
@@ -58,6 +59,8 @@ export const createOrder = async (req, res) => {
   }
 
   sendConfirmation(order, req.user);
+  alertNewOrder({ ...(order.toObject?.() ?? order), user: req.user });
+  checkLowStock(order.items);
   return res.status(201).json({ order });
 };
 
@@ -406,6 +409,7 @@ export const requestOrderCancellation = async (req, res) => {
       refundId: order.refundId,
       reason: order.refundReason,
     }).catch((err) => console.error("[OrderController] Failed to dispatch refund email:", err));
+    alertCancellation(order, { autoRefunded: true });
 
     return res.json({
       success: true,
@@ -419,6 +423,7 @@ export const requestOrderCancellation = async (req, res) => {
   order.cancellationReason = reason || "Cancellation requested by customer";
   order.cancelledAt = new Date();
   await order.save();
+  alertCancellation(order, { autoRefunded: false });
 
   return res.json({
     success: true,
