@@ -1,7 +1,7 @@
 import crypto from "crypto";
 import { OAuth2Client } from "google-auth-library";
 import User from "../models/User.js";
-import { generateToken } from "../utils/generateToken.js";
+import { setAuthCookie, clearAuthCookie } from "../utils/authCookie.js";
 import {
   sendForgotPasswordEmail,
   sendSetPasswordEmail,
@@ -27,9 +27,9 @@ export const register = async (req, res) => {
     console.error("[AuthController] Error sending welcome email:", err)
   );
 
+  setAuthCookie(res, user._id);
   return res.status(201).json({
     user: user.toSafeObject(),
-    token: generateToken(user._id),
   });
 };
 
@@ -43,9 +43,9 @@ export const login = async (req, res) => {
   if (!user || !(await user.comparePassword(password))) {
     return res.status(401).json({ message: "Invalid email or password" });
   }
+  setAuthCookie(res, user._id);
   return res.json({
     user: user.toSafeObject(),
-    token: generateToken(user._id),
   });
 };
 
@@ -134,14 +134,19 @@ export const googleAuth = async (req, res) => {
     await user.save();
   }
 
+  setAuthCookie(res, user._id);
   return res.status(isNewUser ? 201 : 200).json({
     user: user.toSafeObject(),
-    token: generateToken(user._id),
     isNewUser,
     message: isNewUser
       ? "Account created with Google — welcome to The Ribbon Story!"
       : "Welcome back!",
   });
+};
+
+export const logout = async (req, res) => {
+  clearAuthCookie(res);
+  return res.json({ message: "Logged out" });
 };
 
 export const getMe = async (req, res) => {
@@ -160,7 +165,8 @@ export const updateProfile = async (req, res) => {
 
   if (changingEmail || changingPassword) {
     if (typeof currentPassword !== "string" || !(await user.comparePassword(currentPassword))) {
-      return res.status(401).json({
+      // 400 rather than 401: the session is valid, only the confirmation failed
+      return res.status(400).json({
         message: "Please enter your current password to change your email or password",
       });
     }
@@ -291,10 +297,10 @@ export const resetPassword = async (req, res) => {
   // Send confirmation security notice
   await sendPasswordChangedConfirmationEmail({ user });
 
+  setAuthCookie(res, user._id);
   return res.json({
     success: true,
     message: "Password has been updated successfully! You can now log in.",
-    token: generateToken(user._id),
     user: user.toSafeObject(),
   });
 };

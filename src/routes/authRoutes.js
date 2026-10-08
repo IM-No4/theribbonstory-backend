@@ -4,6 +4,7 @@ import {
   login,
   googleAuth,
   getMe,
+  logout,
   addAddress,
   deleteAddress,
   updateProfile,
@@ -22,6 +23,7 @@ router.post("/google", asyncHandler(googleAuth));
 router.post("/forgot-password", asyncHandler(forgotPassword));
 router.post("/reset-password/:token", asyncHandler(resetPassword));
 router.post("/set-password", asyncHandler(requestSetPassword));
+router.post("/logout", asyncHandler(logout));
 
 router.get("/me", protect, asyncHandler(getMe));
 router.put("/profile", protect, asyncHandler(updateProfile));

@@ -3,16 +3,19 @@ import crypto from "crypto";
 import { computeOrderPricing } from "../services/pricingService.js";
 import { safeEqual } from "../utils/security.js";
 
-const getRazorpayInstance = () => {
-  const { RAZORPAY_KEY_ID, RAZORPAY_KEY_SECRET } = process.env;
-  if (!RAZORPAY_KEY_ID || RAZORPAY_KEY_ID.includes("xxxx") || !RAZORPAY_KEY_SECRET) {
-    return null;
-  }
-  return new Razorpay({ key_id: RAZORPAY_KEY_ID, key_secret: RAZORPAY_KEY_SECRET });
+// Wrapped in an object so tests can substitute a fake gateway
+export const razorpayGateway = {
+  getInstance: () => {
+    const { RAZORPAY_KEY_ID, RAZORPAY_KEY_SECRET } = process.env;
+    if (!RAZORPAY_KEY_ID || RAZORPAY_KEY_ID.includes("xxxx") || !RAZORPAY_KEY_SECRET) {
+      return null;
+    }
+    return new Razorpay({ key_id: RAZORPAY_KEY_ID, key_secret: RAZORPAY_KEY_SECRET });
+  },
 };
 
 export const createRazorpayOrder = async (req, res) => {
-  const instance = getRazorpayInstance();
+  const instance = razorpayGateway.getInstance();
   if (!instance) {
     return res.status(503).json({
       message:
@@ -66,7 +69,7 @@ export const verifyRazorpayPaymentResult = async (paymentResult, expectedTotal) 
     return err;
   };
 
-  const instance = getRazorpayInstance();
+  const instance = razorpayGateway.getInstance();
   if (!instance) {
     const err = new Error("Payment gateway not configured");
     err.statusCode = 503;
@@ -97,7 +100,7 @@ export const verifyRazorpayPayment = async (req, res) => {
  * Execute a Full or Partial Refund via Razorpay
  */
 export const executeRazorpayRefund = async ({ paymentId, amount, notes = {} }) => {
-  const instance = getRazorpayInstance();
+  const instance = razorpayGateway.getInstance();
 
   if (!paymentId) throw new Error("Missing Razorpay payment id for refund");
 
