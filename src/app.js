@@ -80,7 +80,15 @@ app.use(
 );
 
 // 5. Body Parsing with payload limits
-app.use(express.json({ limit: "10mb" }));
+app.use(
+  express.json({
+    limit: "10mb",
+    // Razorpay signs the exact bytes it sends; keep them for the webhook
+    verify: (req, res, buf) => {
+      if (req.originalUrl.startsWith("/api/payments/razorpay/webhook")) req.rawBody = buf;
+    },
+  })
+);
 app.use(express.urlencoded({ extended: true, limit: "10mb" }));
 
 // 6. NoSQL Injection Sanitization Middleware

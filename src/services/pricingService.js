@@ -150,6 +150,24 @@ export const computeOrderPricing = async ({ items, couponCode, deliverySlot }) =
     };
   });
 
+  // Stock check for catalog products (placeholder-linked hampers carry no stock)
+  const wanted = new Map();
+  for (const item of orderItems) {
+    if (!item.fromCatalog) continue;
+    const id = String(item.product);
+    wanted.set(id, (wanted.get(id) || 0) + item.quantity);
+  }
+  for (const [id, quantity] of wanted) {
+    const product = productMap.get(id);
+    if (product && typeof product.stock === "number" && product.stock < quantity) {
+      throw new PricingError(
+        product.stock > 0
+          ? `Sorry, only ${product.stock} of "${product.name}" left in stock`
+          : `Sorry, "${product.name}" is out of stock`
+      );
+    }
+  }
+
   const itemsPrice = orderItems.reduce((sum, i) => sum + i.price * i.quantity, 0);
 
   let shippingPrice = itemsPrice >= FREE_SHIPPING_THRESHOLD ? 0 : STANDARD_SHIPPING_FEE;

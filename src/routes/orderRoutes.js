@@ -10,6 +10,7 @@ import {
   issueOrderRefund,
   requestOrderCancellation,
   getOrderRefundStatus,
+  confirmOrderPayment,
 } from "../controllers/orderController.js";
 import { protect, admin } from "../middleware/auth.js";
 import { asyncHandler } from "../utils/asyncHandler.js";
@@ -31,5 +32,6 @@ router.post("/", protect, asyncHandler(createOrder));
 router.get("/my", protect, asyncHandler(getMyOrders));
 router.get("/:id", protect, asyncHandler(getOrderById));
 router.post("/:id/cancel", protect, asyncHandler(requestOrderCancellation));
+router.post("/:id/confirm-payment", protect, asyncHandler(confirmOrderPayment));
 
 export default router;

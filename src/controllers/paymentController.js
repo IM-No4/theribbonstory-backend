@@ -1,6 +1,8 @@
 import Razorpay from "razorpay";
 import crypto from "crypto";
-import { computeOrderPricing } from "../services/pricingService.js";
+import mongoose from "mongoose";
+import Order from "../models/Order.js";
+import { buildOrderFields, markOrderPaid, PAYMENT_WINDOW_MS } from "../services/orderService.js";
 import { safeEqual } from "../utils/security.js";
 
 // Wrapped in an object so tests can substitute a fake gateway
@@ -14,6 +16,10 @@ export const razorpayGateway = {
   },
 };
 
+/**
+ * Start an online checkout: price the cart on the server, save the order as
+ * awaiting payment, and open a Razorpay order for exactly that amount.
+ */
 export const createRazorpayOrder = async (req, res) => {
   const instance = razorpayGateway.getInstance();
   if (!instance) {
@@ -23,28 +29,80 @@ export const createRazorpayOrder = async (req, res) => {
     });
   }
 
-  // Amount is always computed server-side from the cart, never taken from the client
-  const { items, couponCode, deliverySlot } = req.body;
-  const pricing = await computeOrderPricing({ items, couponCode, deliverySlot });
-  if (pricing.totalPrice <= 0) return res.status(400).json({ message: "Invalid order amount" });
+  const { fields } = await buildOrderFields(req.body, req.user);
+  if (fields.totalPrice <= 0) return res.status(400).json({ message: "Invalid order amount" });
 
-  const order = await instance.orders.create({
-    amount: Math.round(pricing.totalPrice * 100),
+  const orderId = new mongoose.Types.ObjectId();
+  const rzpOrder = await instance.orders.create({
+    amount: Math.round(fields.totalPrice * 100),
     currency: "INR",
-    receipt: `receipt_${Date.now()}`,
-    notes: { userId: String(req.user._id) },
+    receipt: `order_${orderId}`,
+    notes: { orderId: String(orderId), userId: String(req.user._id) },
+  });
+
+  await Order.create({
+    _id: orderId,
+    ...fields,
+    paymentMethod: "razorpay",
+    isPaid: false,
+    status: "pending",
+    awaitingPayment: true,
+    paymentExpiresAt: new Date(Date.now() + PAYMENT_WINDOW_MS),
+    paymentResult: { razorpayOrderId: rzpOrder.id },
   });
 
   return res.status(201).json({
-    order,
+    order: rzpOrder,
+    orderId,
     keyId: process.env.RAZORPAY_KEY_ID,
     pricing: {
-      itemsPrice: pricing.itemsPrice,
-      shippingPrice: pricing.shippingPrice,
-      discountPrice: pricing.discountPrice,
-      totalPrice: pricing.totalPrice,
+      itemsPrice: fields.itemsPrice,
+      shippingPrice: fields.shippingPrice,
+      discountPrice: fields.discountPrice,
+      totalPrice: fields.totalPrice,
     },
   });
+};
+
+/**
+ * Razorpay webhook (payment.captured / order.paid). Confirms the order even
+ * when the customer's browser never came back after paying.
+ * Configure in Razorpay Dashboard > Settings > Webhooks with
+ * RAZORPAY_WEBHOOK_SECRET as the secret.
+ */
+export const razorpayWebhook = async (req, res) => {
+  const secret = process.env.RAZORPAY_WEBHOOK_SECRET;
+  if (!secret) {
+    console.error("[RazorpayWebhook] RAZORPAY_WEBHOOK_SECRET is not set — rejecting webhook");
+    return res.status(503).json({ message: "Webhook not configured" });
+  }
+  const expected = crypto.createHmac("sha256", secret).update(req.rawBody || "").digest("hex");
+  if (!req.rawBody || !safeEqual(expected, req.headers["x-razorpay-signature"])) {
+    return res.status(401).json({ message: "Invalid signature" });
+  }
+
+  const { event, payload } = req.body || {};
+  if (!["payment.captured", "order.paid"].includes(event)) return res.json({ received: true, ignored: event });
+
+  const payment = payload?.payment?.entity;
+  if (!payment?.order_id || !payment?.id) return res.json({ received: true, ignored: "no payment" });
+
+  try {
+    const result = await markOrderPaid({
+      razorpayOrderId: payment.order_id,
+      razorpayPaymentId: payment.id,
+      amountPaise: payment.amount,
+    });
+    if (!result) {
+      console.warn(`[RazorpayWebhook] No order for Razorpay order ${payment.order_id} (payment ${payment.id})`);
+      return res.json({ received: true, matched: false });
+    }
+    return res.json({ received: true, matched: true, newlyPaid: result.newlyPaid });
+  } catch (err) {
+    // Acknowledge so Razorpay stops retrying; the mismatch needs a human
+    console.error(`[RazorpayWebhook] Could not confirm payment ${payment.id}:`, err.message);
+    return res.json({ received: true, error: err.message });
+  }
 };
 
 const isValidRazorpaySignature = ({ razorpayOrderId, razorpayPaymentId, razorpaySignature }) => {

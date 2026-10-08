@@ -91,6 +91,13 @@ const orderSchema = new mongoose.Schema(
       ribbonColor: { type: String, default: "Burgundy Velvet" },
       hidePrice: { type: Boolean, default: true },
     },
+    // Online orders are saved before payment and confirmed by the browser
+    // or the Razorpay webhook; unpaid ones expire (TTL index below)
+    awaitingPayment: { type: Boolean },
+    paymentExpiresAt: { type: Date },
+    // Stock bookkeeping so cancellations give stock back exactly once
+    stockDeducted: { type: Boolean, default: false },
+    stockRestored: { type: Boolean, default: false },
     scheduledDeliveryDate: { type: String, default: "" },
     deliverySlot: { type: String, default: "Standard Delivery (3-5 Days)" },
   },
@@ -100,6 +107,9 @@ const orderSchema = new mongoose.Schema(
 orderSchema.index({ user: 1, createdAt: -1 });
 orderSchema.index({ status: 1, createdAt: -1 });
 orderSchema.index({ "shippingAddress.phone": 1 });
+orderSchema.index({ "paymentResult.razorpayOrderId": 1 });
+// Abandoned online checkouts are removed automatically once their payment window passes
+orderSchema.index({ paymentExpiresAt: 1 }, { expireAfterSeconds: 0 });
 // A Razorpay payment can only ever pay for one order
 orderSchema.index(
   { "paymentResult.razorpayPaymentId": 1 },
