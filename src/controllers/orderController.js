@@ -17,6 +17,7 @@ import { findOrderByPublicIdentifier } from "../utils/orderLookup.js";
 import { sendRefundNotificationEmail } from "../services/emailService.js";
 import { notifyStatusChange } from "../services/orderNotifications.js";
 import { salesReport } from "../services/salesReport.js";
+import { assignInvoiceNumber, issueInvoice, renderInvoicePdf } from "../services/invoiceService.js";
 
 /**
  * Cash-on-delivery orders. Online (Razorpay) orders are created by
@@ -60,6 +61,7 @@ export const createOrder = async (req, res) => {
   alertNewOrder({ ...(order.toObject?.() ?? order), user: req.user });
   checkLowStock(order.items);
   startReferencePacks(order);
+  issueInvoice(order);
   return res.status(201).json({ order });
 };
 
@@ -109,6 +111,28 @@ export const getOrderById = async (req, res) => {
     return res.json({ order: withFiles });
   }
   return res.json({ order });
+};
+
+/** GST invoice PDF for the customer who placed the order, or an admin */
+export const getOrderInvoice = async (req, res) => {
+  if (!isObjectId(req.params.id)) return res.status(400).json({ message: "Invalid order" });
+  const order = await Order.findById(req.params.id).populate("user", "name email");
+  if (!order) return res.status(404).json({ message: "Order not found" });
+  if (String(order.user?._id || order.user) !== String(req.user._id) && req.user.role !== "admin") {
+    return res.status(403).json({ message: "Not authorized to view this order" });
+  }
+  // Orders from before invoices existed get their number on first download
+  if (!(await assignInvoiceNumber(order))?.number) {
+    return res.status(400).json({ message: "The invoice will be available once your order is confirmed." });
+  }
+  const pdf = await renderInvoicePdf(order);
+  const filename = `invoice-${order.invoice.number.replace(/\//g, "-")}.pdf`;
+  res.set({
+    "Content-Type": "application/pdf",
+    "Content-Disposition": `attachment; filename="${filename}"`,
+    "Cache-Control": "private, no-store",
+  });
+  return res.send(pdf);
 };
 
 // Public Order Tracking

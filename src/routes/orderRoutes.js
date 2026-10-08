@@ -7,6 +7,7 @@ import {
   getAdminOrders,
   updateOrderStatus,
   getSalesReport,
+  getOrderInvoice,
   getAdminStats,
   issueOrderRefund,
   requestOrderCancellation,
@@ -32,6 +33,7 @@ router.get("/:id/refund-status", protect, asyncHandler(getOrderRefundStatus));
 // Customer Routes
 router.post("/", protect, asyncHandler(createOrder));
 router.get("/my", protect, asyncHandler(getMyOrders));
+router.get("/:id/invoice", protect, asyncHandler(getOrderInvoice));
 router.get("/:id", protect, asyncHandler(getOrderById));
 router.post("/:id/cancel", protect, asyncHandler(requestOrderCancellation));
 router.post("/:id/confirm-payment", protect, asyncHandler(confirmOrderPayment));
