@@ -54,3 +54,19 @@ export const admin = (req, res, next) => {
   if (req.user && req.user.role === "admin") return next();
   return res.status(403).json({ message: "Admin access required" });
 };
+
+/** Attach req.user when a valid session is present; anonymous requests continue */
+export const optionalUser = async (req, res, next) => {
+  try {
+    const header = req.headers.authorization;
+    const token = (header?.startsWith("Bearer ") ? header.split(" ")[1] : null) || readAuthCookie(req);
+    if (token) {
+      const decoded = jwt.verify(token, getJwtSecret(), { algorithms: ["HS256"] });
+      const user = await User.findById(decoded.id).select("-password");
+      if (user && (decoded.v || 0) === (user.tokenVersion || 0)) req.user = user;
+    }
+  } catch {
+    // invalid or expired token: treat as anonymous
+  }
+  next();
+};

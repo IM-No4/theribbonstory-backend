@@ -2,7 +2,48 @@ import path from "path";
 import fs from "fs";
 import Reference3D from "../models/Reference3D.js";
 import Order from "../models/Order.js";
-import { runReferenceGenerationPipeline } from "../services/gemini3dAgent.js";
+import {
+  runReferenceGenerationPipeline,
+  createPreviewSession,
+  regeneratePreview,
+  completeReferencePack,
+  MAX_PREVIEW_ATTEMPTS,
+  resolveUploadedImagePath,
+} from "../services/gemini3dAgent.js";
+
+/** What the storefront needs to show a customer their preview */
+const previewResponse = (record) => ({
+  sessionId: record.sessionId,
+  originalUrl: record.originalImage.url,
+  // A placeholder drawing is never presented as the customer's design
+  previewAvailable: record.previewIsReal,
+  previewUrl: record.previewIsReal ? record.views.front.url : null,
+  attemptsLeft: Math.max(0, MAX_PREVIEW_ATTEMPTS - record.previewAttempts),
+});
+
+/**
+ * @desc Customer: upload a photo and get the cute 3D front-view preview
+ * @route POST /api/3d-agent/preview
+ */
+export const createPreview = async (req, res) => {
+  if (!req.file) return res.status(400).json({ message: "Please upload a photo" });
+  const record = await createPreviewSession({
+    uploadedFile: req.file,
+    userId: req.user?._id || null,
+    customNotes: typeof req.body.customNotes === "string" ? req.body.customNotes : "",
+  });
+  fs.unlink(req.file.path, () => {});
+  return res.status(201).json(previewResponse(record));
+};
+
+/**
+ * @desc Customer: try another design from the same photo
+ * @route POST /api/3d-agent/preview/:sessionId/regenerate
+ */
+export const regenerateCustomerPreview = async (req, res) => {
+  const record = await regeneratePreview(req.params.sessionId);
+  return res.json(previewResponse(record));
+};
 
 /**
  * @desc Generate 4-view 3D reference set for an uploaded photo or URL
@@ -46,7 +87,20 @@ export const generateForOrder = async (req, res) => {
     return res.status(404).json({ message: "Order not found" });
   }
 
-  // Find customization photo in order items
+  // Preferred: build the pack from the exact preview the customer approved
+  const approved = order.items.find((i) => i.customization?.reference3D?.sessionId && i.customization.reference3D.approvedPreview);
+  if (approved) {
+    const ref = approved.customization.reference3D;
+    const approvedFrontPath = resolveUploadedImagePath(ref.approvedPreview);
+    const session = await completeReferencePack({ sessionId: ref.sessionId, approvedFrontPath, orderId: order._id });
+    return res.status(200).json({
+      success: true,
+      message: `3D reference pack built from the customer's approved design for Order #${order._id.toString().slice(-6).toUpperCase()}`,
+      session,
+    });
+  }
+
+  // Older orders: generate a design from the customer's photo
   let photoUrl = null;
   let orderNotes = customNotes || "";
 

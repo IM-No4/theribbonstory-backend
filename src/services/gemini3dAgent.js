@@ -301,6 +301,9 @@ const getGeminiClient = () => {
 /**
  * Converts a local image file into a Part object for Gemini Multimodal API
  */
+const MIME_BY_EXT = { ".jpg": "image/jpeg", ".jpeg": "image/jpeg", ".png": "image/png", ".webp": "image/webp", ".svg": "image/svg+xml" };
+const mimeFor = (filePath) => MIME_BY_EXT[path.extname(filePath).toLowerCase()] || "image/jpeg";
+
 const fileToGenerativePart = (filePath, mimeType = "image/jpeg") => {
   return {
     inlineData: {
@@ -551,14 +554,14 @@ export const generateReferenceView = async ({
         const model = gemini.getGenerativeModel({ model: modelName });
         const parts = [
           { text: `${MASTER_SYSTEM_PROMPT}\n\n${anglePrompt}` },
-          fileToGenerativePart(originalImagePath, "image/jpeg"),
+          fileToGenerativePart(originalImagePath, mimeFor(originalImagePath)),
         ];
 
         if (frontViewImagePath && fs.existsSync(frontViewImagePath)) {
           parts.push({
             text: "MASTER REFERENCE FRONT IMAGE (Reproduce EXACT SAME character, colors, clothes, circular base):",
           });
-          parts.push(fileToGenerativePart(frontViewImagePath, "image/png"));
+          parts.push(fileToGenerativePart(frontViewImagePath, mimeFor(frontViewImagePath)));
         }
 
         const result = await model.generateContent(parts);
@@ -625,295 +628,261 @@ export const resolveUploadedImagePath = (photoUrl) => {
   return fs.existsSync(resolved) ? resolved : null;
 };
 
+export const MAX_PREVIEW_ATTEMPTS = 3;
+
+const VIEW_META = {
+  front: "Front (0° Master Design View)",
+  left: "Left Three-Quarter (+45°)",
+  right: "Right Three-Quarter (-45°)",
+  back: "Rear / Back (180°)",
+};
+
+/** Write a generated view; Gemini returns PNG, the fallback draws SVG */
+const saveView = (dir, baseName, result) => {
+  const ext = result.imageBuffer ? "png" : "svg";
+  const filename = `${baseName}.${ext}`;
+  const filePath = path.join(dir, filename);
+  fs.writeFileSync(filePath, result.imageBuffer || result.svgContent);
+  return { filename, filePath, isReal: Boolean(result.imageBuffer) };
+};
+
+const uploadsUrl = (filePath) => `/uploads/${path.relative(uploadsRoot, filePath).split(path.sep).join("/")}`;
+
+/** Folder of a session; only ever under uploads/3d_references */
+const sessionDir = (record) => {
+  const dir = path.resolve(reference3dDir, path.basename(record.storageKey));
+  if (!dir.startsWith(reference3dDir + path.sep)) throw new Error("Invalid session folder");
+  return dir;
+};
+
+/** Update the reference3D of the order item(s) that use a session */
+const updateOrderReferences = async (orderId, sessionId, fields) => {
+  if (!orderId) return;
+  const order = await Order.findById(orderId);
+  if (!order) return;
+  let changed = false;
+  order.items.forEach((item) => {
+    const ref = item.customization?.reference3D;
+    if (ref?.sessionId !== sessionId) return;
+    Object.assign(ref, fields);
+    changed = true;
+  });
+  if (changed) {
+    order.markModified("items");
+    await order.save();
+  }
+};
+
+/** Generate one front-view attempt for a session and record it */
+const generateFrontAttempt = async (record) => {
+  const attempt = record.previewAttempts + 1;
+  record.status = "processing_front";
+  record.generationLogs.push({ step: "GENERATING_FRONT_VIEW", message: `Generating front view (attempt ${attempt})` });
+  await record.save();
+
+  const result = await generateReferenceView({
+    angle: "front",
+    originalImagePath: record.originalImage.localPath,
+    sessionId: record.sessionId,
+    customNotes: record.customNotes,
+  });
+  // A failed retry must not replace (or use up) the design the customer already has
+  if (!result.imageBuffer && record.previewIsReal) {
+    record.status = "preview_ready";
+    record.generationLogs.push({ step: "PREVIEW_RETRY_FAILED", message: "Image model unavailable: kept the current design" });
+    await record.save();
+    const err = new Error("We couldn't create a new design just now. Your current design is kept. Please try again in a minute.");
+    err.statusCode = 503;
+    throw err;
+  }
+  const saved = saveView(sessionDir(record), `front-${attempt}`, result);
+
+  record.previewAttempts = attempt;
+  record.previewIsReal = saved.isReal;
+  record.views.front = {
+    url: uploadsUrl(saved.filePath),
+    localPath: saved.filePath,
+    filename: saved.filename,
+    status: "completed",
+    cameraAngle: VIEW_META.front,
+    promptUsed: result.promptUsed,
+    generatedAt: new Date(),
+    fileSize: fs.statSync(saved.filePath).size,
+  };
+  record.status = "preview_ready";
+  record.generationLogs.push({
+    step: saved.isReal ? "PREVIEW_READY" : "PREVIEW_FALLBACK",
+    message: saved.isReal ? `Front view ready (attempt ${attempt})` : "Image model unavailable: placeholder drawn",
+  });
+  await record.save();
+  return record;
+};
+
 /**
- * Main 4-View Reference Generation Agent Orchestrator
- *
- * Execution Flow:
- * 1. Store Customer Photo in `uploads/customer_photos/` and reference folder `uploads/3d_references/{id}/original.jpg`
- * 2. Phase 1: Customer Photo -> Gemini -> Generate `front.png` (Master Design View)
- * 3. Phase 2: [Customer Photo + `front.png`] -> Gemini Left 45° -> Generate `left.png`
- * 4. Phase 3: [Customer Photo + `front.png`] -> Gemini Right 45° -> Generate `right.png`
- * 5. Phase 4: [Customer Photo + `front.png`] -> Gemini Rear 180° -> Generate `back.png`
- * 6. Generate `manifest.json` + `reference_pack.zip` (for 1-click Meshy/Tripo upload)
- * 7. Persist to MongoDB (Reference3D and optionally update Order)
+ * Step 1 (customers): save the photo and generate ONLY the front view, so the
+ * customer quickly sees the cute 3D design they are ordering.
  */
-export const runReferenceGenerationPipeline = async ({
-  uploadedFile,
-  existingPhotoUrl = null,
-  orderId = null,
-  userId = null,
-  customNotes = "",
-}) => {
+export const createPreviewSession = async ({ uploadedFile, existingPhotoUrl = null, orderId = null, userId = null, customNotes = "" }) => {
   const sessionId = `ref_${Date.now()}_${crypto.randomBytes(16).toString("hex")}`;
   const folderName = orderId ? `order_${String(orderId).replace(/[^0-9a-fA-F]/g, "")}` : sessionId;
   const targetDir = path.join(reference3dDir, folderName);
+  fs.mkdirSync(targetDir, { recursive: true });
 
-  if (!fs.existsSync(targetDir)) {
-    fs.mkdirSync(targetDir, { recursive: true });
+  const sourcePath = uploadedFile?.path || (existingPhotoUrl ? resolveUploadedImagePath(existingPhotoUrl) : null);
+  if (!sourcePath || !fs.existsSync(sourcePath)) {
+    const err = new Error("Please upload a photo to create your 3D preview");
+    err.statusCode = 400;
+    throw err;
   }
-
-  // 1. Resolve and Save Original Image
-  const originalFileName = "original.jpg";
+  const ext = path.extname(sourcePath).toLowerCase() || ".jpg";
+  const originalFileName = `original${ext}`;
   const originalFilePath = path.join(targetDir, originalFileName);
+  fs.copyFileSync(sourcePath, originalFilePath);
 
-  let sourcePath = null;
-  if (uploadedFile && uploadedFile.path) {
-    sourcePath = uploadedFile.path;
-  } else if (existingPhotoUrl) {
-    sourcePath = resolveUploadedImagePath(existingPhotoUrl);
-  }
-
-  if (sourcePath && fs.existsSync(sourcePath)) {
-    fs.copyFileSync(sourcePath, originalFilePath);
-  } else {
-    // Write sample baseline original image if none exists
-    const dummySvg = generateStyledReferenceSvg({ angle: "front", sessionId });
-    fs.writeFileSync(originalFilePath, dummySvg);
-  }
-
-  // Also maintain clean copy in `uploads/customer_photos/`
-  const customerPhotoSavePath = path.join(customerPhotosDir, `${folderName}_original.jpg`);
-  try {
-    fs.copyFileSync(originalFilePath, customerPhotoSavePath);
-  } catch (e) {
-    // ignore
-  }
-
-  // Create DB Document
-  const refRecord = await Reference3D.create({
+  const record = await Reference3D.create({
     sessionId,
     orderId: orderId || null,
     userId: userId || null,
+    customNotes: String(customNotes || "").slice(0, 500),
     originalImage: {
-      url: `/uploads/3d_references/${folderName}/original.jpg`,
+      url: uploadsUrl(originalFilePath),
       localPath: originalFilePath,
       filename: originalFileName,
+      mimetype: ext === ".png" ? "image/png" : ext === ".webp" ? "image/webp" : "image/jpeg",
       size: fs.statSync(originalFilePath).size,
     },
     folderPath: targetDir,
     storageKey: folderName,
-    status: "processing_front",
-    generationLogs: [
-      {
-        step: "INGEST_CUSTOMER_PHOTO",
-        message: "Customer photo ingested, analyzed for meaningful story elements vs environmental clutter.",
-      },
-    ],
+    status: "queued",
+    generationLogs: [{ step: "INGEST_CUSTOMER_PHOTO", message: "Customer photo received" }],
   });
 
   try {
-    // ============================================================
-    // STEP 1: GENERATE MASTER FRONT VIEW (0° Front)
-    // ============================================================
-    refRecord.generationLogs.push({
-      step: "GENERATING_FRONT_VIEW",
-      message: "Generating Master Front View (0°) with Bambu Lab A1 PLA collectible specifications...",
-    });
-    await refRecord.save();
-
-    const frontResult = await generateReferenceView({
-      angle: "front",
-      originalImagePath: originalFilePath,
-      sessionId,
-      customNotes,
-    });
-
-    const frontPath = path.join(targetDir, "front.png");
-    fs.writeFileSync(frontPath, frontResult.imageBuffer || frontResult.svgContent);
-
-    refRecord.views.front = {
-      url: `/uploads/3d_references/${folderName}/front.png`,
-      localPath: frontPath,
-      filename: "front.png",
-      status: "completed",
-      cameraAngle: "Front (0° Master Design View)",
-      promptUsed: frontResult.promptUsed,
-      generatedAt: new Date(),
-      fileSize: fs.statSync(frontPath).size,
-    };
-    refRecord.status = "processing_multiview";
-    await refRecord.save();
-
-    // ============================================================
-    // STEP 2: GENERATE LEFT THREE-QUARTER VIEW (+45° Left)
-    // Inputs: Original Customer Photo + Generated Master Front Image
-    // ============================================================
-    refRecord.generationLogs.push({
-      step: "GENERATING_LEFT_VIEW",
-      message: "Generating Left 3/4 View (+45°) anchored to Master Front View geometry and color palette...",
-    });
-    await refRecord.save();
-
-    const leftResult = await generateReferenceView({
-      angle: "left",
-      originalImagePath: originalFilePath,
-      frontViewImagePath: frontPath,
-      sessionId,
-      customNotes,
-    });
-
-    const leftPath = path.join(targetDir, "left.png");
-    fs.writeFileSync(leftPath, leftResult.imageBuffer || leftResult.svgContent);
-
-    refRecord.views.left = {
-      url: `/uploads/3d_references/${folderName}/left.png`,
-      localPath: leftPath,
-      filename: "left.png",
-      status: "completed",
-      cameraAngle: "Left Three-Quarter (+45°)",
-      promptUsed: leftResult.promptUsed,
-      generatedAt: new Date(),
-      fileSize: fs.statSync(leftPath).size,
-    };
-    await refRecord.save();
-
-    // ============================================================
-    // STEP 3: GENERATE RIGHT THREE-QUARTER VIEW (-45° Right)
-    // Inputs: Original Customer Photo + Generated Master Front Image
-    // ============================================================
-    refRecord.generationLogs.push({
-      step: "GENERATING_RIGHT_VIEW",
-      message: "Generating Right 3/4 View (-45°) preserving exact scale, clothing folds, and circular base...",
-    });
-    await refRecord.save();
-
-    const rightResult = await generateReferenceView({
-      angle: "right",
-      originalImagePath: originalFilePath,
-      frontViewImagePath: frontPath,
-      sessionId,
-      customNotes,
-    });
-
-    const rightPath = path.join(targetDir, "right.png");
-    fs.writeFileSync(rightPath, rightResult.imageBuffer || rightResult.svgContent);
-
-    refRecord.views.right = {
-      url: `/uploads/3d_references/${folderName}/right.png`,
-      localPath: rightPath,
-      filename: "right.png",
-      status: "completed",
-      cameraAngle: "Right Three-Quarter (-45°)",
-      promptUsed: rightResult.promptUsed,
-      generatedAt: new Date(),
-      fileSize: fs.statSync(rightPath).size,
-    };
-    await refRecord.save();
-
-    // ============================================================
-    // STEP 4: GENERATE REAR / BACK VIEW (180° Rear)
-    // Inputs: Original Customer Photo + Generated Master Front Image
-    // ============================================================
-    refRecord.generationLogs.push({
-      step: "GENERATING_BACK_VIEW",
-      message: "Generating Rear View (180°) intelligently inferring backside hair, apparel, and continuous base...",
-    });
-    await refRecord.save();
-
-    const backResult = await generateReferenceView({
-      angle: "back",
-      originalImagePath: originalFilePath,
-      frontViewImagePath: frontPath,
-      sessionId,
-      customNotes,
-    });
-
-    const backPath = path.join(targetDir, "back.png");
-    fs.writeFileSync(backPath, backResult.imageBuffer || backResult.svgContent);
-
-    refRecord.views.back = {
-      url: `/uploads/3d_references/${folderName}/back.png`,
-      localPath: backPath,
-      filename: "back.png",
-      status: "completed",
-      cameraAngle: "Rear / Back (180°)",
-      promptUsed: backResult.promptUsed,
-      generatedAt: new Date(),
-      fileSize: fs.statSync(backPath).size,
-    };
-
-    // ============================================================
-    // STEP 5: GENERATE MANIFEST & MESHY/TRIPO EXPORT PACKAGE (ZIP)
-    // ============================================================
-    const manifest = {
-      engine: "Ribbon Story Image-to-3D Reference Agent (Google Gemini Powered)",
-      version: "2.0.0",
-      targetManufacturing: "Bambu Lab A1 / A1 Combo (FDM Multi-Color PLA, 0.4mm nozzle)",
-      downstreamPipeline: "Meshy / Tripo Image-to-3D Multi-View Reconstruction",
-      sessionId,
-      orderId,
-      timestamp: new Date().toISOString(),
-      files: {
-        original: "original.jpg",
-        front: "front.png",
-        left: "left.png",
-        right: "right.png",
-        back: "back.png",
-      },
-      readinessMetrics: {
-        overall: 96,
-        silhouetteClarity: 98,
-        fdmPrintability: 95,
-        crossViewConsistency: 97,
-        neutralLighting: 96,
-      },
-    };
-
-    fs.writeFileSync(path.join(targetDir, "manifest.json"), JSON.stringify(manifest, null, 2));
-
-    // Create Zip file for instant download / 3D Reconstruction API consumption
-    const zipFilename = `${folderName}_3d_reference_pack.zip`;
-    const zipPath = path.join(targetDir, zipFilename);
-
-    await createZipPackage(targetDir, zipPath, [
-      { name: "original.jpg", path: originalFilePath },
-      { name: "front.png", path: frontPath },
-      { name: "left.png", path: leftPath },
-      { name: "right.png", path: rightPath },
-      { name: "back.png", path: backPath },
-      { name: "manifest.json", path: path.join(targetDir, "manifest.json") },
-    ]);
-
-    refRecord.zipPackageUrl = `/uploads/3d_references/${folderName}/${zipFilename}`;
-    refRecord.zipPackagePath = zipPath;
-    refRecord.status = "completed";
-    refRecord.generationLogs.push({
-      step: "PIPELINE_COMPLETE",
-      message: "4 multi-view reference images generated and validated. Ready for Meshy / Tripo 3D reconstruction.",
-    });
-
-    await refRecord.save();
-
-    // If linked to an order, update the order with reference3D details
-    if (orderId) {
-      await Order.findByIdAndUpdate(orderId, {
-        $set: {
-          "items.0.customization.reference3D": {
-            sessionId: refRecord.sessionId,
-            front: refRecord.views.front.url,
-            left: refRecord.views.left.url,
-            right: refRecord.views.right.url,
-            back: refRecord.views.back.url,
-            zipUrl: refRecord.zipPackageUrl,
-            status: "completed",
-            generatedAt: new Date(),
-          },
-        },
-      });
-    }
-
-    return refRecord;
+    return await generateFrontAttempt(record);
   } catch (err) {
-    console.error("[Gemini 3D Agent Pipeline Error]:", err);
-    refRecord.status = "failed";
-    refRecord.errorMessage = err.message;
-    refRecord.generationLogs.push({
-      step: "PIPELINE_ERROR",
-      message: `Error during 3D reference generation: ${err.message}`,
-    });
-    await refRecord.save();
+    record.status = "failed";
+    record.errorMessage = err.message;
+    await record.save();
     throw err;
   }
+};
+
+/** Customer asked for another take on their design (limited attempts) */
+export const regeneratePreview = async (sessionId) => {
+  const record = await Reference3D.findOne({ sessionId: String(sessionId) });
+  if (!record) {
+    const err = new Error("This preview has expired. Please upload your photo again.");
+    err.statusCode = 404;
+    throw err;
+  }
+  if (record.previewAttempts >= MAX_PREVIEW_ATTEMPTS) {
+    const err = new Error(`You've used all ${MAX_PREVIEW_ATTEMPTS} design attempts for this photo. Upload a new photo to start again.`);
+    err.statusCode = 429;
+    throw err;
+  }
+  return generateFrontAttempt(record);
+};
+
+/**
+ * Step 2 (after the order): generate the left, right and back views from the
+ * EXACT front image the customer approved, then zip the reference pack for
+ * image-to-3D (Meshy / Tripo / TripoSG) and printing.
+ */
+export const completeReferencePack = async ({ sessionId, approvedFrontPath, orderId = null }) => {
+  const record = await Reference3D.findOne({ sessionId: String(sessionId) });
+  if (!record) throw new Error(`3D session ${sessionId} not found`);
+  const frontPath = approvedFrontPath || record.views.front?.localPath;
+  if (!frontPath || !fs.existsSync(frontPath)) throw new Error("Approved front view is missing");
+
+  const packDir = path.join(sessionDir(record), orderId ? `pack_${String(orderId).replace(/[^0-9a-fA-F]/g, "")}` : "pack");
+  fs.mkdirSync(packDir, { recursive: true });
+  const frontCopy = path.join(packDir, `front${path.extname(frontPath)}`);
+  fs.copyFileSync(frontPath, frontCopy);
+
+  record.status = "processing_multiview";
+  if (orderId) record.orderId = orderId;
+  record.generationLogs.push({ step: "GENERATING_MULTIVIEW", message: "Generating left, right and back views from the approved front view" });
+  await record.save();
+
+  try {
+    const views = { front: { filePath: frontCopy, filename: path.basename(frontCopy) } };
+    for (const angle of ["left", "right", "back"]) {
+      const result = await generateReferenceView({
+        angle,
+        originalImagePath: record.originalImage.localPath,
+        frontViewImagePath: frontCopy,
+        sessionId: record.sessionId,
+        customNotes: record.customNotes,
+      });
+      views[angle] = saveView(packDir, angle, result);
+      record.views[angle] = {
+        url: uploadsUrl(views[angle].filePath),
+        localPath: views[angle].filePath,
+        filename: views[angle].filename,
+        status: "completed",
+        cameraAngle: VIEW_META[angle],
+        promptUsed: result.promptUsed,
+        generatedAt: new Date(),
+        fileSize: fs.statSync(views[angle].filePath).size,
+      };
+      await record.save();
+    }
+
+    const manifest = {
+      engine: "Ribbon Story Image-to-3D Reference Agent (Google Gemini Powered)",
+      version: "3.0.0",
+      targetManufacturing: "Bambu Lab A1 / A1 Combo (FDM Multi-Color PLA, 0.4mm nozzle)",
+      downstreamPipeline: "Image-to-3D reconstruction (Meshy / Tripo / TripoSG), front view = customer-approved design",
+      sessionId: record.sessionId,
+      orderId,
+      timestamp: new Date().toISOString(),
+      files: Object.fromEntries(Object.entries(views).map(([k, v]) => [k, v.filename])),
+    };
+    const manifestPath = path.join(packDir, "manifest.json");
+    fs.writeFileSync(manifestPath, JSON.stringify(manifest, null, 2));
+
+    const zipPath = path.join(packDir, `${record.storageKey}_3d_reference_pack.zip`);
+    await createZipPackage(packDir, zipPath, [
+      { name: path.basename(record.originalImage.localPath), path: record.originalImage.localPath },
+      ...Object.values(views).map((v) => ({ name: v.filename, path: v.filePath })),
+      { name: "manifest.json", path: manifestPath },
+    ]);
+
+    record.zipPackageUrl = uploadsUrl(zipPath);
+    record.zipPackagePath = zipPath;
+    record.status = "completed";
+    record.generationLogs.push({ step: "PIPELINE_COMPLETE", message: "Reference pack ready for 3D reconstruction" });
+    await record.save();
+
+    // Attach the pack to the order item(s) that used this session
+    await updateOrderReferences(orderId, record.sessionId, {
+      front: uploadsUrl(frontCopy),
+      left: record.views.left.url,
+      right: record.views.right.url,
+      back: record.views.back.url,
+      zipUrl: record.zipPackageUrl,
+      status: "completed",
+      generatedAt: new Date(),
+    });
+    return record;
+  } catch (err) {
+    console.error("[Gemini 3D Agent] Reference pack failed:", err);
+    record.status = "failed";
+    record.errorMessage = err.message;
+    record.generationLogs.push({ step: "PIPELINE_ERROR", message: err.message });
+    await record.save();
+    // Let the studio see it failed (and retry) instead of waiting forever
+    await updateOrderReferences(orderId, record.sessionId, { status: "failed" }).catch(() => {});
+    throw err;
+  }
+};
+
+/**
+ * Admin: full pipeline from a photo (front view + pack) in one go.
+ */
+export const runReferenceGenerationPipeline = async ({ uploadedFile, existingPhotoUrl = null, orderId = null, userId = null, customNotes = "" }) => {
+  const record = await createPreviewSession({ uploadedFile, existingPhotoUrl, orderId, userId, customNotes });
+  return completeReferencePack({ sessionId: record.sessionId, approvedFrontPath: record.views.front.localPath, orderId });
 };
 
 /**

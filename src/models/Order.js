@@ -14,8 +14,15 @@ const orderItemSchema = new mongoose.Schema(
     customization: {
       photoUrl: String,
       note: String,
+      // Personalisation the customer typed in (previously dropped on save)
+      customName: String,
+      customDate: String,
+      size: String,
       reference3D: {
         sessionId: String,
+        // The exact preview image the customer approved: the design to print
+        approvedPreview: String,
+        approvedAt: Date,
         front: String,
         left: String,
         right: String,
