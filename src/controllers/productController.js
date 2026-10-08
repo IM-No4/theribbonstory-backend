@@ -126,7 +126,7 @@ export const createProduct = async (req, res) => {
     description: description || "",
     price: Number(price),
     compareAtPrice: compareAtPrice ? Number(compareAtPrice) : undefined,
-    images: Array.isArray(images) && images.length > 0 ? images : ["/src/assets/images/photo-magnet.jpeg"],
+    images: Array.isArray(images) && images.length > 0 ? images : ["/images/photo-magnet.webp"],
     accentColor: accentColor || "#a83f52",
     isCustomizable: Boolean(isCustomizable),
     customizationPrompt: customizationPrompt || "Upload your favourite photo",
