@@ -56,6 +56,8 @@ describe("Sales report", () => {
     assert.equal(r.fulfilment.cancelled, 1);
     assert.equal(r.refunded, 500);
     assert.deepEqual(filters[0].awaitingPayment, { $ne: true }, "abandoned online checkouts excluded");
+    assert.equal(filters[1].createdAt.$gte.toISOString(), "2026-09-24T18:30:00.000Z");
+    assert.equal(filters[1].createdAt.$lt.getTime(), NOW - 7 * 864e5, "previous period ends at the same time of day");
   });
 
   it("'today' starts at midnight India time", async () => {

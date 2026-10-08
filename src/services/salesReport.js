@@ -71,7 +71,11 @@ export const summarizeSales = (orders, { from, to, previous = [], days }) => {
   };
 };
 
-/** Sales for today / the last 7 days / the last 30 days (IST), with the period before for comparison */
+/**
+ * Sales for today / the last 7 days / the last 30 days (IST), compared with
+ * the period before up to the same time of day (so "today so far" is
+ * compared with "yesterday by this time", not all of yesterday)
+ */
 export const salesReport = async (range = "7d", now = Date.now()) => {
   const days = RANGES[range] || RANGES["7d"];
   const from = istMidnight(now, days - 1);
@@ -80,7 +84,7 @@ export const salesReport = async (range = "7d", now = Date.now()) => {
   const placed = { awaitingPayment: { $ne: true } };
   const [orders, previous] = await Promise.all([
     Order.find({ ...placed, createdAt: { $gte: from, $lte: new Date(now) } }).select(fields).lean(),
-    Order.find({ ...placed, createdAt: { $gte: prevFrom, $lt: from } }).select("createdAt totalPrice status isRefunded refundStatus").lean(),
+    Order.find({ ...placed, createdAt: { $gte: prevFrom, $lt: new Date(now - days * DAY_MS) } }).select("createdAt totalPrice status isRefunded refundStatus").lean(),
   ]);
   return { range: RANGES[range] ? range : "7d", ...summarizeSales(orders, { from, to: new Date(now), previous, days }) };
 };
