@@ -10,7 +10,7 @@ import Order from "../models/Order.js";
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const uploadsRoot = path.join(__dirname, "..", "..", "uploads");
 const customerPhotosDir = path.join(uploadsRoot, "customer_photos");
-const reference3dDir = path.join(uploadsRoot, "3d_references");
+export const reference3dDir = path.join(uploadsRoot, "3d_references");
 
 // Ensure target directories exist on boot
 [uploadsRoot, customerPhotosDir, reference3dDir].forEach((dir) => {
@@ -722,7 +722,7 @@ const generateFrontAttempt = async (record) => {
  * Step 1 (customers): save the photo and generate ONLY the front view, so the
  * customer quickly sees the cute 3D design they are ordering.
  */
-export const createPreviewSession = async ({ uploadedFile, existingPhotoUrl = null, orderId = null, userId = null, customNotes = "" }) => {
+export const createPreviewSession = async ({ uploadedFile, existingPhotoUrl = null, orderId = null, userId = null, customNotes = "", source = "admin" }) => {
   const sessionId = `ref_${Date.now()}_${crypto.randomBytes(16).toString("hex")}`;
   const folderName = orderId ? `order_${String(orderId).replace(/[^0-9a-fA-F]/g, "")}` : sessionId;
   const targetDir = path.join(reference3dDir, folderName);
@@ -744,6 +744,7 @@ export const createPreviewSession = async ({ uploadedFile, existingPhotoUrl = nu
     orderId: orderId || null,
     userId: userId || null,
     customNotes: String(customNotes || "").slice(0, 500),
+    source,
     originalImage: {
       url: uploadsUrl(originalFilePath),
       localPath: originalFilePath,

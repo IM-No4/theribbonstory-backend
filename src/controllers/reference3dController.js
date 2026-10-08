@@ -30,6 +30,7 @@ export const createPreview = async (req, res) => {
   const record = await createPreviewSession({
     uploadedFile: req.file,
     userId: req.user?._id || null,
+    source: "customer",
     customNotes: typeof req.body.customNotes === "string" ? req.body.customNotes : "",
   });
   fs.unlink(req.file.path, () => {});
@@ -63,6 +64,7 @@ export const generateReferenceViews = async (req, res) => {
     existingPhotoUrl: photoUrl,
     orderId: orderId || null,
     userId: req.user?._id || null,
+    source: "customer",
     customNotes: customNotes || "",
   });
 

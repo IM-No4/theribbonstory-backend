@@ -115,6 +115,7 @@ orderSchema.index({ user: 1, createdAt: -1 });
 orderSchema.index({ status: 1, createdAt: -1 });
 orderSchema.index({ "shippingAddress.phone": 1 });
 orderSchema.index({ "paymentResult.razorpayOrderId": 1 });
+orderSchema.index({ "items.customization.reference3D.sessionId": 1 }, { sparse: true });
 // Abandoned online checkouts are removed automatically once their payment window passes
 orderSchema.index({ paymentExpiresAt: 1 }, { expireAfterSeconds: 0 });
 // A Razorpay payment can only ever pay for one order
