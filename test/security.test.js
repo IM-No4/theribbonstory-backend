@@ -3,6 +3,7 @@ import assert from "node:assert/strict";
 import fs from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
+import sharp from "sharp";
 import { mock, startServer, fakeUser, authAs, mockRes } from "./helpers.js";
 import User from "../src/models/User.js";
 import { resolveUploadedImagePath } from "../src/services/gemini3dAgent.js";
@@ -95,7 +96,8 @@ describe("Upload content verification", () => {
   it("POST /api/upload accepts a real image", async () => {
     const token = authAs(User, fakeUser());
     const form = new FormData();
-    form.append("photo", new Blob([PNG_HEADER], { type: "image/png" }), "x.png");
+    const png = await sharp({ create: { width: 8, height: 8, channels: 3, background: "#fff" } }).png().toBuffer();
+    form.append("photo", new Blob([png], { type: "image/png" }), "x.png");
     const res = await fetch(`${server.url}/api/upload`, {
       method: "POST",
       headers: { Authorization: `Bearer ${token}` },

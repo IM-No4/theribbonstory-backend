@@ -1,5 +1,5 @@
 import express from "express";
-import { upload, verifyUploadedImages } from "../middleware/upload.js";
+import { upload, verifyUploadedImages, optimizeUploadedImages } from "../middleware/upload.js";
 import { uploadCustomizationPhoto } from "../controllers/uploadController.js";
 import { protect } from "../middleware/auth.js";
 import { asyncHandler } from "../utils/asyncHandler.js";
@@ -20,6 +20,7 @@ router.post(
     });
   },
   verifyUploadedImages,
+  optimizeUploadedImages,
   asyncHandler(uploadCustomizationPhoto)
 );
 
