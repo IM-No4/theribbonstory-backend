@@ -23,6 +23,7 @@ import shippingRoutes from "./routes/shippingRoutes.js";
 import contactRoutes from "./routes/contactRoutes.js";
 import reference3dRoutes from "./routes/reference3dRoutes.js";
 import subscriberRoutes from "./routes/subscriberRoutes.js";
+import seoRoutes from "./routes/seoRoutes.js";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 dotenv.config({ path: path.join(__dirname, "..", ".env") });
@@ -123,6 +124,9 @@ app.use(
 app.get("/api/health", (req, res) =>
   res.json({ status: "ok", service: "theribbonstory-api", timestamp: new Date() })
 );
+
+// Sitemap and product share pages (outside /api: crawlers fetch these)
+app.use(seoRoutes);
 
 // 9. API Routes with rate limiters
 app.use("/api", apiLimiter);
