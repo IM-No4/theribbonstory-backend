@@ -64,6 +64,10 @@ const COLUMNS = [
   ["IGST", (o, t) => t.igst],
   ["Refunded", (o) => (o.isRefunded ? o.refundAmount || 0 : 0)],
   ["Tracking no.", (o) => o.awbCode || o.trackingNumber || ""],
+  ["Delivery slot", (o) => o.deliverySlot || ""],
+  ["Scheduled date", (o) => o.scheduledDeliveryDate || ""],
+  ["Gift", (o) => (o.giftOptions?.isGift ? "Yes" : "No")],
+  ["Gift message", (o) => (o.giftOptions?.isGift ? o.giftOptions.giftMessage || "" : "")],
 ];
 
 /** Orders placed between two IST dates (inclusive), as CSV text for Excel / Sheets */
