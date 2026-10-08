@@ -56,10 +56,18 @@ const reference3DSchema = new mongoose.Schema(
 
     status: {
       type: String,
-      enum: ["queued", "processing_front", "processing_multiview", "completed", "failed"],
+      enum: ["queued", "processing_front", "preview_ready", "processing_multiview", "completed", "failed"],
       default: "queued",
       index: true,
     },
+
+    // Customer preview flow: each attempt writes front-<n>.png so an image a
+    // customer approved for an order is never overwritten by a later attempt
+    previewAttempts: { type: Number, default: 0 },
+    // false when Gemini was unavailable and only a placeholder could be drawn;
+    // placeholders are never offered to customers as their design
+    previewIsReal: { type: Boolean, default: false },
+    customNotes: { type: String, default: "" },
 
     readinessScore: {
       overall: { type: Number, default: 95 },

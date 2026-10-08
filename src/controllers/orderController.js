@@ -9,6 +9,7 @@ import {
   consumeCoupon,
   sendConfirmation,
   markOrderPaid,
+  startReferencePacks,
 } from "../services/orderService.js";
 import { isObjectId } from "../utils/security.js";
 import { alertNewOrder, alertCancellation, checkLowStock } from "../services/studioAlerts.js";
@@ -61,6 +62,7 @@ export const createOrder = async (req, res) => {
   sendConfirmation(order, req.user);
   alertNewOrder({ ...(order.toObject?.() ?? order), user: req.user });
   checkLowStock(order.items);
+  startReferencePacks(order);
   return res.status(201).json({ order });
 };
 

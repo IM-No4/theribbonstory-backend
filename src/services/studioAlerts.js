@@ -1,6 +1,7 @@
 import Product from "../models/Product.js";
 import { getTransporter, EMAIL_SENDERS } from "./emailService.js";
 import { escapeHtml as esc } from "../utils/security.js";
+import { absoluteImageUrl } from "../routes/seoRoutes.js";
 
 /**
  * Internal emails to the studio team: new orders, confirmed payments,
@@ -37,8 +38,15 @@ const itemsTable = (order) => {
   const rows = (order.items || [])
     .map((item) => {
       const options = (item.selectedOptions || []).map((o) => `${esc(o.name)}: ${esc(o.value)}`).join(" · ");
-      const note = item.customization?.note ? `<div style="color:#9E3D52;font-style:italic">“${esc(item.customization.note)}”</div>` : "";
-      const photo = item.customization?.photoUrl ? `<div style="color:#666">Customer photo attached</div>` : "";
+      const c = item.customization || {};
+      const note = c.note ? `<div style="color:#9E3D52;font-style:italic">“${esc(c.note)}”</div>` : "";
+      const inscription = [c.customName && `Name: ${esc(c.customName)}`, c.customDate && `Date: ${esc(c.customDate)}`].filter(Boolean).join(" · ");
+      const design = c.reference3D?.approvedPreview
+        ? `<div style="margin-top:6px"><img src="${esc(absoluteImageUrl(c.reference3D.approvedPreview))}" alt="Approved 3D design" width="120" style="border-radius:8px;border:1px solid #eee"><div style="color:#666;font-size:12px">Customer-approved 3D design</div></div>`
+        : c.photoUrl
+          ? `<div style="color:#666">Customer photo attached</div>`
+          : "";
+      const photo = `${inscription ? `<div style="color:#444">${inscription}</div>` : ""}${design}`;
       return `<tr>
         <td style="padding:6px 8px;border-bottom:1px solid #eee"><strong>${esc(item.name)}</strong>${options ? `<div style="color:#666">${options}</div>` : ""}${note}${photo}</td>
         <td style="padding:6px 8px;border-bottom:1px solid #eee;text-align:center">${esc(item.quantity)}</td>

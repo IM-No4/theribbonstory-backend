@@ -5,9 +5,82 @@ import Coupon from "../models/Coupon.js";
 import { computeOrderPricing, PricingError } from "./pricingService.js";
 import { sendOrderConfirmationEmail } from "./emailService.js";
 import { alertNewOrder, checkLowStock } from "./studioAlerts.js";
+import Reference3D from "../models/Reference3D.js";
+import { completeReferencePack, resolveUploadedImagePath } from "./gemini3dAgent.js";
 
 /** Unpaid online orders are deleted after this long (customer abandoned payment) */
 export const PAYMENT_WINDOW_MS = 3 * 24 * 60 * 60 * 1000;
+
+const PREVIEW_READY_STATES = ["preview_ready", "processing_multiview", "completed"];
+const text = (value, max) => (typeof value === "string" ? value.trim().slice(0, max) : undefined);
+/** Only images we host may be stored on orders (never data: URLs or third-party links) */
+const hostedImage = (value) => (typeof value === "string" && /^\/(uploads|images)\/[\w./-]+$/.test(value) ? value : undefined);
+
+/**
+ * Personalisation for each order item. For 3D keepsakes the customer's
+ * approved preview is verified against its preview session and becomes the
+ * design of record: the image that is turned into the 3D model and printed.
+ */
+const attachCustomizations = async (orderItems, cartItems, user) => {
+  for (let i = 0; i < orderItems.length; i += 1) {
+    const sent = cartItems[i]?.customization || {};
+    const customization = {
+      photoUrl: hostedImage(sent.photoUrl),
+      note: text(sent.note, 1000),
+      customName: text(sent.customName, 100),
+      customDate: text(sent.customDate, 50),
+      size: text(sent.size, 100),
+    };
+
+    const sessionId = text(sent.reference3D?.sessionId, 100);
+    if (sessionId) {
+      const session = await Reference3D.findOne({ sessionId });
+      const ownedByOther = session?.userId && String(session.userId) !== String(user._id);
+      if (!session || ownedByOther || !session.previewIsReal || !PREVIEW_READY_STATES.includes(session.status)) {
+        throw new PricingError("Your 3D preview has expired. Please open the keepsake and upload your photo again.");
+      }
+      // The customer may have approved an earlier attempt: accept any front
+      // view of THIS session, defaulting to the latest
+      const folder = `/uploads/3d_references/${session.storageKey}/`;
+      const requested = hostedImage(sent.reference3D?.approvedPreview);
+      const approvedPreview =
+        requested && requested.startsWith(`${folder}front-`) && resolveUploadedImagePath(requested)
+          ? requested
+          : session.views.front.url;
+
+      customization.photoUrl = session.originalImage.url;
+      customization.reference3D = { sessionId, approvedPreview, approvedAt: new Date(), status: "approved" };
+      orderItems[i].image = approvedPreview;
+      if (!session.userId) await Reference3D.updateOne({ _id: session._id, userId: null }, { $set: { userId: user._id } });
+    } else if (!hostedImage(orderItems[i].image)) {
+      orderItems[i].image = undefined;
+    }
+
+    orderItems[i].customization = Object.fromEntries(Object.entries(customization).filter(([, v]) => v !== undefined));
+  }
+};
+
+/**
+ * Build the 3D reference pack (side and back views) for each approved
+ * design once an order is confirmed. Runs in the background.
+ */
+export const startReferencePacks = (order) => {
+  const refs = (order.items || []).map((i) => i.customization?.reference3D).filter((r) => r?.sessionId && r.approvedPreview);
+  if (refs.length === 0) return;
+  (async () => {
+    for (const ref of refs) {
+      try {
+        await completeReferencePack({
+          sessionId: ref.sessionId,
+          approvedFrontPath: resolveUploadedImagePath(ref.approvedPreview),
+          orderId: order._id,
+        });
+      } catch (err) {
+        console.error(`[OrderService] 3D reference pack failed for order ${order._id}:`, err.message);
+      }
+    }
+  })();
+};
 
 /**
  * Validate the checkout payload and build the order document fields with
@@ -27,6 +100,7 @@ export const buildOrderFields = async (body, user) => {
     couponCode,
     deliverySlot,
   });
+  await attachCustomizations(orderItems, items, user);
 
   // Estimated delivery: scheduled date, or 4 days from now
   let estimatedDelivery = scheduledDeliveryDate ? new Date(scheduledDeliveryDate) : null;
@@ -176,5 +250,6 @@ export const markOrderPaid = async ({ razorpayOrderId, razorpayPaymentId, razorp
   sendConfirmation(order, order.user);
   alertNewOrder(order);
   checkLowStock(order.items);
+  startReferencePacks(order);
   return { order, newlyPaid: true };
 };
