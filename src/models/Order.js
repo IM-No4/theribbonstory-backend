@@ -105,6 +105,11 @@ const orderSchema = new mongoose.Schema(
     // Stock bookkeeping so cancellations give stock back exactly once
     stockDeducted: { type: Boolean, default: false },
     stockRestored: { type: Boolean, default: false },
+    // GST invoice: numbered in sequence per financial year when the order is confirmed
+    invoice: {
+      number: String,
+      date: Date,
+    },
     // When the customer was emailed about shipping / delivery (sent once each)
     notifications: {
       shippedAt: Date,
@@ -120,6 +125,7 @@ orderSchema.index({ user: 1, createdAt: -1 });
 orderSchema.index({ status: 1, createdAt: -1 });
 orderSchema.index({ "shippingAddress.phone": 1 });
 orderSchema.index({ "paymentResult.razorpayOrderId": 1 });
+orderSchema.index({ "invoice.number": 1 }, { unique: true, sparse: true });
 orderSchema.index({ "items.customization.reference3D.sessionId": 1 }, { sparse: true });
 // Abandoned online checkouts are removed automatically once their payment window passes
 orderSchema.index({ paymentExpiresAt: 1 }, { expireAfterSeconds: 0 });

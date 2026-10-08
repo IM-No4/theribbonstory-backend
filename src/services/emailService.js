@@ -35,13 +35,15 @@ export const getTransporter = (type = "NOREPLY") => {
       port,
       secure: isSecure,
       auth: { user, pass },
-      tls: {
-        rejectUnauthorized: false,
-      },
+      // The mail server's certificate is verified so the SMTP password can't
+      // be intercepted. Only for a server with a self-signed certificate:
+      // SMTP_ALLOW_INVALID_CERT=true
+      tls: { rejectUnauthorized: process.env.SMTP_ALLOW_INVALID_CERT !== "true", minVersion: "TLSv1.2" },
     });
   } else {
     // Development fallback mock transport
     transporters[upperType] = {
+      isMock: true,
       sendMail: async (mailOptions) => {
         console.log(`\n================ [EMAIL SERVICE MOCK DISPATCH: ${upperType}] ================`);
         console.log(`From:    ${mailOptions.from}`);
@@ -697,3 +699,38 @@ export const sendLaunchWaitlistEmail = async ({ email }) => {
 };
 
 
+
+/**
+ * Admin check that email works: connects to the mail server with the current
+ * settings and sends a test message. Returns a plain-language result.
+ */
+export const sendTestEmail = async ({ to, type = "NOREPLY" }) => {
+  const transporter = getTransporter(type);
+  if (transporter.isMock) {
+    return { ok: false, message: "Email isn't set up yet: set SMTP_HOST, SMTP_USER and SMTP_PASS on the server, then restart it." };
+  }
+  try {
+    await transporter.verify();
+    await transporter.sendMail({
+      from: EMAIL_SENDERS[type] || EMAIL_SENDERS.NOREPLY,
+      to,
+      subject: "✅ Test email from The Ribbon Story",
+      html: renderEmailTemplate({
+        title: "Test email",
+        preheader: "Your store's email settings work.",
+        content: `<h2 class="heading">Email is working 🎉</h2><p>This test was sent from your admin panel. Order confirmations, shipping updates and studio alerts will be delivered the same way.</p>`,
+      }),
+    });
+    return { ok: true, message: `Test email sent to ${to}. Check the inbox (and spam folder).` };
+  } catch (err) {
+    const reason =
+      err.code === "EAUTH"
+        ? "the mail server rejected the username or password"
+        : /certificate|self[- ]signed|CERT/i.test(err.message)
+          ? "the mail server's security certificate isn't valid"
+          : ["ECONNECTION", "ETIMEDOUT", "ESOCKET", "EDNS"].includes(err.code)
+            ? `couldn't connect to ${process.env.SMTP_HOST || "the mail server"} (check SMTP_HOST and SMTP_PORT)`
+            : err.message;
+    return { ok: false, message: `Email failed: ${reason}.` };
+  }
+};

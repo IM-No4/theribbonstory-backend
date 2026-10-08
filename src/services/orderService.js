@@ -7,6 +7,7 @@ import { sendOrderConfirmationEmail } from "./emailService.js";
 import { alertNewOrder, checkLowStock } from "./studioAlerts.js";
 import Reference3D from "../models/Reference3D.js";
 import { completeReferencePack, resolveUploadedImagePath } from "./gemini3dAgent.js";
+import { issueInvoice } from "./invoiceService.js";
 
 /** Unpaid online orders are deleted after this long (customer abandoned payment) */
 export const PAYMENT_WINDOW_MS = 3 * 24 * 60 * 60 * 1000;
@@ -251,5 +252,6 @@ export const markOrderPaid = async ({ razorpayOrderId, razorpayPaymentId, razorp
   alertNewOrder(order);
   checkLowStock(order.items);
   startReferencePacks(order);
+  issueInvoice(order);
   return { order, newlyPaid: true };
 };

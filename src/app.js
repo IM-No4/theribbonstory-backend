@@ -22,6 +22,7 @@ import reviewRoutes from "./routes/reviewRoutes.js";
 import shippingRoutes from "./routes/shippingRoutes.js";
 import contactRoutes from "./routes/contactRoutes.js";
 import reference3dRoutes from "./routes/reference3dRoutes.js";
+import adminRoutes from "./routes/adminRoutes.js";
 import subscriberRoutes from "./routes/subscriberRoutes.js";
 import seoRoutes from "./routes/seoRoutes.js";
 
@@ -77,6 +78,8 @@ app.use(
     credentials: true,
     methods: ["GET", "POST", "PUT", "DELETE", "PATCH", "OPTIONS"],
     allowedHeaders: ["Content-Type", "Authorization"],
+    // Let the admin panel read download file names and export counts
+    exposedHeaders: ["Content-Disposition", "X-Order-Count", "X-Export-Truncated"],
   })
 );
 
@@ -141,6 +144,7 @@ app.use("/api/reviews", reviewRoutes);
 app.use("/api/shipping", shippingRoutes);
 app.use("/api/contact", contactRoutes);
 app.use("/api/3d-agent", reference3dRoutes);
+app.use("/api/admin", adminRoutes);
 app.use("/api/subscribers", subscriberRoutes);
 app.use("/api/waitlist", subscriberRoutes);
 

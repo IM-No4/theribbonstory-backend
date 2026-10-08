@@ -17,6 +17,8 @@ import { findOrderByPublicIdentifier } from "../utils/orderLookup.js";
 import { sendRefundNotificationEmail } from "../services/emailService.js";
 import { notifyStatusChange } from "../services/orderNotifications.js";
 import { salesReport } from "../services/salesReport.js";
+import { exportOrdersCsv } from "../services/ordersExport.js";
+import { assignInvoiceNumber, issueInvoice, renderInvoicePdf } from "../services/invoiceService.js";
 
 /**
  * Cash-on-delivery orders. Online (Razorpay) orders are created by
@@ -60,6 +62,7 @@ export const createOrder = async (req, res) => {
   alertNewOrder({ ...(order.toObject?.() ?? order), user: req.user });
   checkLowStock(order.items);
   startReferencePacks(order);
+  issueInvoice(order);
   return res.status(201).json({ order });
 };
 
@@ -109,6 +112,28 @@ export const getOrderById = async (req, res) => {
     return res.json({ order: withFiles });
   }
   return res.json({ order });
+};
+
+/** GST invoice PDF for the customer who placed the order, or an admin */
+export const getOrderInvoice = async (req, res) => {
+  if (!isObjectId(req.params.id)) return res.status(400).json({ message: "Invalid order" });
+  const order = await Order.findById(req.params.id).populate("user", "name email");
+  if (!order) return res.status(404).json({ message: "Order not found" });
+  if (String(order.user?._id || order.user) !== String(req.user._id) && req.user.role !== "admin") {
+    return res.status(403).json({ message: "Not authorized to view this order" });
+  }
+  // Orders from before invoices existed get their number on first download
+  if (!(await assignInvoiceNumber(order))?.number) {
+    return res.status(400).json({ message: "The invoice will be available once your order is confirmed." });
+  }
+  const pdf = await renderInvoicePdf(order);
+  const filename = `invoice-${order.invoice.number.replace(/\//g, "-")}.pdf`;
+  res.set({
+    "Content-Type": "application/pdf",
+    "Content-Disposition": `attachment; filename="${filename}"`,
+    "Cache-Control": "private, no-store",
+  });
+  return res.send(pdf);
 };
 
 // Public Order Tracking
@@ -236,6 +261,21 @@ export const updateOrderStatus = async (req, res) => {
   notifyStatusChange(order, oldStatus);
 
   return res.json({ order, message: `Order status updated to ${order.status}` });
+};
+
+/** Admin: orders as CSV, ?from=YYYY-MM-DD&to=YYYY-MM-DD&status=all|<status> (IST dates) */
+export const exportOrders = async (req, res) => {
+  const { from, to, status } = req.query;
+  const { csv, count, truncated } = await exportOrdersCsv({ from, to, status });
+  const name = `orders-${from || "start"}-to-${to || "today"}${status && status !== "all" ? `-${status}` : ""}.csv`.replace(/[^\w.-]/g, "");
+  res.set({
+    "Content-Type": "text/csv; charset=utf-8",
+    "Content-Disposition": `attachment; filename="${name}"`,
+    "Cache-Control": "private, no-store",
+    "X-Order-Count": String(count),
+    ...(truncated ? { "X-Export-Truncated": "true" } : {}),
+  });
+  res.send(csv);
 };
 
 /** Admin sales dashboard: ?range=today|7d|30d */
