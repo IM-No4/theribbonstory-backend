@@ -1,5 +1,7 @@
 import Razorpay from "razorpay";
 import crypto from "crypto";
+import { computeOrderPricing } from "../services/pricingService.js";
+import { safeEqual } from "../utils/security.js";
 
 const getRazorpayInstance = () => {
   const { RAZORPAY_KEY_ID, RAZORPAY_KEY_SECRET } = process.env;
@@ -10,9 +12,6 @@ const getRazorpayInstance = () => {
 };
 
 export const createRazorpayOrder = async (req, res) => {
-  const { amount } = req.body; // amount in rupees
-  if (!amount || amount <= 0) return res.status(400).json({ message: "Invalid amount" });
-
   const instance = getRazorpayInstance();
   if (!instance) {
     return res.status(503).json({
@@ -21,23 +20,76 @@ export const createRazorpayOrder = async (req, res) => {
     });
   }
 
+  // Amount is always computed server-side from the cart, never taken from the client
+  const { items, couponCode, deliverySlot } = req.body;
+  const pricing = await computeOrderPricing({ items, couponCode, deliverySlot });
+  if (pricing.totalPrice <= 0) return res.status(400).json({ message: "Invalid order amount" });
+
   const order = await instance.orders.create({
-    amount: Math.round(amount * 100),
+    amount: Math.round(pricing.totalPrice * 100),
     currency: "INR",
     receipt: `receipt_${Date.now()}`,
+    notes: { userId: String(req.user._id) },
   });
 
-  return res.status(201).json({ order, keyId: process.env.RAZORPAY_KEY_ID });
+  return res.status(201).json({
+    order,
+    keyId: process.env.RAZORPAY_KEY_ID,
+    pricing: {
+      itemsPrice: pricing.itemsPrice,
+      shippingPrice: pricing.shippingPrice,
+      discountPrice: pricing.discountPrice,
+      totalPrice: pricing.totalPrice,
+    },
+  });
+};
+
+const isValidRazorpaySignature = ({ razorpayOrderId, razorpayPaymentId, razorpaySignature }) => {
+  const secret = process.env.RAZORPAY_KEY_SECRET;
+  if (!secret || !razorpayOrderId || !razorpayPaymentId || !razorpaySignature) return false;
+  const expected = crypto
+    .createHmac("sha256", secret)
+    .update(`${razorpayOrderId}|${razorpayPaymentId}`)
+    .digest("hex");
+  return safeEqual(expected, razorpaySignature);
+};
+
+/**
+ * Verify a Razorpay checkout result end-to-end: signature, payment state,
+ * that the payment belongs to the order, and that the paid amount matches.
+ * Throws with statusCode on failure.
+ */
+export const verifyRazorpayPaymentResult = async (paymentResult, expectedTotal) => {
+  const fail = (message) => {
+    const err = new Error(message);
+    err.statusCode = 400;
+    return err;
+  };
+
+  const instance = getRazorpayInstance();
+  if (!instance) {
+    const err = new Error("Payment gateway not configured");
+    err.statusCode = 503;
+    throw err;
+  }
+  if (!isValidRazorpaySignature(paymentResult || {})) throw fail("Payment signature verification failed");
+
+  const payment = await instance.payments.fetch(paymentResult.razorpayPaymentId);
+  if (payment.order_id !== paymentResult.razorpayOrderId) throw fail("Payment does not belong to this order");
+  if (!["captured", "authorized"].includes(payment.status)) throw fail("Payment has not been completed");
+  if (payment.currency !== "INR" || Number(payment.amount) !== Math.round(expectedTotal * 100)) {
+    throw fail("Paid amount does not match the order total. Please contact support.");
+  }
+  return payment;
 };
 
 export const verifyRazorpayPayment = async (req, res) => {
   const { razorpay_order_id, razorpay_payment_id, razorpay_signature } = req.body;
-  const expected = crypto
-    .createHmac("sha256", process.env.RAZORPAY_KEY_SECRET || "")
-    .update(`${razorpay_order_id}|${razorpay_payment_id}`)
-    .digest("hex");
-
-  const isValid = expected === razorpay_signature;
+  const isValid = isValidRazorpaySignature({
+    razorpayOrderId: razorpay_order_id,
+    razorpayPaymentId: razorpay_payment_id,
+    razorpaySignature: razorpay_signature,
+  });
   return res.json({ valid: isValid });
 };
 
@@ -47,8 +99,11 @@ export const verifyRazorpayPayment = async (req, res) => {
 export const executeRazorpayRefund = async ({ paymentId, amount, notes = {} }) => {
   const instance = getRazorpayInstance();
 
-  // If Razorpay instance is not configured or in mock/test mode
-  if (!instance || !paymentId || paymentId.startsWith("pay_mock_") || paymentId.includes("xxxx")) {
+  if (!paymentId) throw new Error("Missing Razorpay payment id for refund");
+
+  // Mock refunds only for local development without gateway keys
+  if (!instance) {
+    if (process.env.NODE_ENV === "production") throw new Error("Payment gateway not configured");
     const mockRefundId = `rfnd_${Math.random().toString(36).substring(2, 16)}`;
     return {
       success: true,

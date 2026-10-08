@@ -1,4 +1,5 @@
 import nodemailer from "nodemailer";
+import { escapeHtml as esc } from "../utils/security.js";
 import dotenv from "dotenv";
 
 dotenv.config();
@@ -65,7 +66,7 @@ const renderEmailTemplate = ({ title, preheader, content, actionButton }) => {
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>${title}</title>
+  <title>${esc(title)}</title>
   <style>
     body { margin: 0; padding: 0; background-color: #FFFDF8; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif; color: #2B161B; }
     .wrapper { width: 100%; table-layout: fixed; background-color: #FFFDF8; padding: 40px 0; }
@@ -85,7 +86,7 @@ const renderEmailTemplate = ({ title, preheader, content, actionButton }) => {
 </head>
 <body>
   <div style="display: none; font-size: 1px; color: #FFFDF8; line-height: 1px; max-height: 0px; max-width: 0px; opacity: 0; overflow: hidden;">
-    ${preheader || title}
+    ${esc(preheader || title)}
   </div>
   <center class="wrapper">
     <table class="main" width="100%" cellpadding="0" cellspacing="0">
@@ -145,17 +146,17 @@ export const sendOrderConfirmationEmail = async ({ order, userEmail, userName })
         (item) => `
       <tr style="border-bottom: 1px solid #F3D9DC;">
         <td style="padding: 12px 0;">
-          <strong style="color: #4A1F29; font-size: 14px;">${item.name}</strong>
+          <strong style="color: #4A1F29; font-size: 14px;">${esc(item.name)}</strong>
           ${
             item.selectedOptions?.length
               ? `<div style="font-size: 11px; color: #8A6D74; margin-top: 2px;">${item.selectedOptions
-                  .map((o) => `${o.name}: ${o.value}`)
+                  .map((o) => `${esc(o.name)}: ${esc(o.value)}`)
                   .join(" | ")}</div>`
               : ""
           }
           ${
             item.customization?.note
-              ? `<div style="font-size: 11px; color: #9E3D52; font-style: italic; margin-top: 2px;">"${item.customization.note}"</div>`
+              ? `<div style="font-size: 11px; color: #9E3D52; font-style: italic; margin-top: 2px;">"${esc(item.customization.note)}"</div>`
               : ""
           }
         </td>
@@ -170,7 +171,7 @@ export const sendOrderConfirmationEmail = async ({ order, userEmail, userName })
       <div style="margin-bottom: 20px;">
         <span class="badge">Order Confirmed • #${shortOrderId}</span>
       </div>
-      <h2 class="heading">Thank you for your order, ${recipientName}!</h2>
+      <h2 class="heading">Thank you for your order, ${esc(recipientName)}!</h2>
       <p>We are delighted to craft your bespoke keepsakes. Our artisans have received your order details and have queued your 3D casting and personalization.</p>
       
       <div style="background-color: #FAF5F2; border: 1px solid #F3D9DC; border-radius: 16px; padding: 20px; margin: 24px 0;">
@@ -205,16 +206,16 @@ export const sendOrderConfirmationEmail = async ({ order, userEmail, userName })
       <div style="background-color: #FFFFFF; border: 1px solid #F3D9DC; border-radius: 16px; padding: 18px; margin-bottom: 24px;">
         <h4 style="margin: 0 0 8px 0; font-size: 12px; text-transform: uppercase; color: #8A6D74; letter-spacing: 0.5px;">Delivery Destination & Slot</h4>
         <p style="margin: 0; color: #3A2228; font-size: 13px; line-height: 1.5;">
-          <strong>${order.shippingAddress?.name}</strong><br>
-          ${order.shippingAddress?.line1}${order.shippingAddress?.line2 ? `, ${order.shippingAddress?.line2}` : ""}<br>
-          ${order.shippingAddress?.city}, ${order.shippingAddress?.state} - ${order.shippingAddress?.postalCode}<br>
-          Phone: ${order.shippingAddress?.phone}
+          <strong>${esc(order.shippingAddress?.name)}</strong><br>
+          ${esc(order.shippingAddress?.line1)}${order.shippingAddress?.line2 ? `, ${esc(order.shippingAddress?.line2)}` : ""}<br>
+          ${esc(order.shippingAddress?.city)}, ${esc(order.shippingAddress?.state)} - ${esc(order.shippingAddress?.postalCode)}<br>
+          Phone: ${esc(order.shippingAddress?.phone)}
         </p>
         ${
           order.scheduledDeliveryDate
             ? `
         <div style="margin-top: 10px; padding-top: 10px; border-top: 1px dashed #F3D9DC; font-size: 12px; color: #9E3D52; font-weight: 600;">
-          📅 Scheduled Delivery: ${order.scheduledDeliveryDate} (${order.deliverySlot || "Standard"})
+          📅 Scheduled Delivery: ${esc(order.scheduledDeliveryDate)} (${esc(order.deliverySlot || "Standard")})
         </div>
         `
             : ""
@@ -259,8 +260,8 @@ export const sendForgotPasswordEmail = async ({ user, resetToken }) => {
         <span class="badge">Security & Authentication</span>
       </div>
       <h2 class="heading">Password Reset Request</h2>
-      <p>Hello <strong>${user.name || "there"}</strong>,</p>
-      <p>We received a request to reset your password for your <strong>The Ribbon Story</strong> account associated with <code>${user.email}</code>.</p>
+      <p>Hello <strong>${esc(user.name || "there")}</strong>,</p>
+      <p>We received a request to reset your password for your <strong>The Ribbon Story</strong> account associated with <code>${esc(user.email)}</code>.</p>
       <p>Click the secure button below to set a new password. This reset link is valid for <strong>1 hour</strong>.</p>
       
       <div style="background-color: #FAF5F2; border: 1px solid #F3D9DC; border-radius: 12px; padding: 14px; margin: 20px 0; font-size: 12px; color: #8A6D74;">
@@ -303,7 +304,7 @@ export const sendSetPasswordEmail = async ({ user, setPasswordToken }) => {
         <span class="badge">Welcome to The Ribbon Story</span>
       </div>
       <h2 class="heading">Set Up Your Account Password</h2>
-      <p>Hello <strong>${user.name || "there"}</strong>,</p>
+      <p>Hello <strong>${esc(user.name || "there")}</strong>,</p>
       <p>Welcome to <strong>The Ribbon Story</strong>! Your bespoke gifting account has been created.</p>
       <p>Please click the button below to set your secure password and access your orders, customized 3D photo gallery, and saved delivery addresses.</p>
     `;
@@ -340,8 +341,8 @@ export const sendPasswordChangedConfirmationEmail = async ({ user }) => {
         <span class="badge">Security Alert</span>
       </div>
       <h2 class="heading">Your Password Was Updated</h2>
-      <p>Hello <strong>${user.name || "there"}</strong>,</p>
-      <p>This is a confirmation that the password for your account <code>${user.email}</code> was successfully updated on <strong>${new Date().toLocaleString("en-IN", { timeZone: "Asia/Kolkata" })} IST</strong>.</p>
+      <p>Hello <strong>${esc(user.name || "there")}</strong>,</p>
+      <p>This is a confirmation that the password for your account <code>${esc(user.email)}</code> was successfully updated on <strong>${new Date().toLocaleString("en-IN", { timeZone: "Asia/Kolkata" })} IST</strong>.</p>
       <p>If you made this change, no further action is required.</p>
       <div style="background-color: #FDF2F4; border: 1px solid #F3D9DC; border-radius: 12px; padding: 14px; margin: 20px 0; font-size: 12px; color: #9E3D52;">
         ⚠️ If you did not make this change, please contact our support team immediately at <a href="mailto:support@theribbonstory.com" style="color: #9E3D52; font-weight: bold;">support@theribbonstory.com</a>.
@@ -387,7 +388,7 @@ export const sendRefundNotificationEmail = async ({ order, userEmail, refundAmou
       
       <div style="background-color: #FAF5F2; border: 1px solid #F3D9DC; border-radius: 16px; padding: 18px; margin: 20px 0; font-size: 13px;">
         <p style="margin: 0 0 6px 0;"><strong>Refund Reference ID:</strong> <code style="font-family: monospace; color: #4A1F29;">${refundId || order.refundId || "rfnd_processed"}</code></p>
-        <p style="margin: 0 0 6px 0;"><strong>Reason:</strong> ${reason || order.refundReason || "Customer cancellation / adjustment"}</p>
+        <p style="margin: 0 0 6px 0;"><strong>Reason:</strong> ${esc(reason || order.refundReason || "Customer cancellation / adjustment")}</p>
         <p style="margin: 0;"><strong>Payment Method:</strong> ${order.paymentMethod === "razorpay" ? "Razorpay Gateway (UPI / Card / NetBanking)" : "Store / Bank Transfer"}</p>
       </div>
 
@@ -430,12 +431,12 @@ export const sendContactInquiryEmails = async ({ name, email, phone, subject, me
       html: `
         <div style="font-family: sans-serif; font-size: 14px; color: #333;">
           <h3 style="color: #4A1F29;">New Website Inquiry</h3>
-          <p><strong>Name:</strong> ${name}</p>
-          <p><strong>Email:</strong> ${email}</p>
-          <p><strong>Phone:</strong> ${phone || "Not provided"}</p>
-          <p><strong>Subject:</strong> ${subject || "General Inquiry"}</p>
+          <p><strong>Name:</strong> ${esc(name)}</p>
+          <p><strong>Email:</strong> ${esc(email)}</p>
+          <p><strong>Phone:</strong> ${esc(phone || "Not provided")}</p>
+          <p><strong>Subject:</strong> ${esc(subject || "General Inquiry")}</p>
           <div style="background: #f7f7f7; padding: 15px; border-radius: 8px; margin-top: 10px;">
-            ${message.replace(/\n/g, "<br>")}
+            ${esc(message).replace(/\n/g, "<br>")}
           </div>
         </div>
       `,
@@ -444,11 +445,11 @@ export const sendContactInquiryEmails = async ({ name, email, phone, subject, me
     // 2. Send polite acknowledgment to customer from contact@theribbonstory.com
     const ackContent = `
       <h2 class="heading">We Received Your Message!</h2>
-      <p>Hello <strong>${name}</strong>,</p>
-      <p>Thank you for getting in touch with <strong>The Ribbon Story</strong>. Our studio concierge team has received your message regarding <em>"${subject || "Your Inquiry"}"</em> and will reply within 2 to 4 business hours.</p>
+      <p>Hello <strong>${esc(name)}</strong>,</p>
+      <p>Thank you for getting in touch with <strong>The Ribbon Story</strong>. Our studio concierge team has received your message regarding <em>"${esc(subject || "Your Inquiry")}"</em> and will reply within 2 to 4 business hours.</p>
       <div style="background-color: #FAF5F2; border: 1px solid #F3D9DC; border-radius: 12px; padding: 14px; margin: 20px 0; font-size: 12px; color: #8A6D74;">
         <strong>Your Message:</strong><br>
-        "${message}"
+        "${esc(message)}"
       </div>
     `;
 
@@ -488,13 +489,13 @@ export const sendOrderShippedEmail = async ({ order, userEmail, userName }) => {
         <span class="badge" style="background-color: #EEF2FF; color: #4338CA; border-color: #C7D2FE;">Package On The Way • #${shortOrderId}</span>
       </div>
       <h2 class="heading">Your Keepsake Has Been Dispatched! 🚚</h2>
-      <p>Hello <strong>${userName || order.shippingAddress?.name || "Valued Patron"}</strong>,</p>
+      <p>Hello <strong>${esc(userName || order.shippingAddress?.name || "Valued Patron")}</strong>,</p>
       <p>Great news! Your handcrafted keepsake order <strong>#${shortOrderId}</strong> has completed studio quality inspections and is safely in transit with our logistics partner.</p>
       
       <div style="background-color: #FAF5F2; border: 1px solid #F3D9DC; border-radius: 16px; padding: 18px; margin: 20px 0; font-size: 13px;">
-        <p style="margin: 0 0 6px 0;"><strong>Courier Partner:</strong> ${courier}</p>
-        <p style="margin: 0 0 6px 0;"><strong>AWB Tracking Number:</strong> <code style="font-family: monospace; color: #4A1F29; font-weight: bold;">${awb}</code></p>
-        <p style="margin: 0;"><strong>Destination:</strong> ${order.shippingAddress?.city}, ${order.shippingAddress?.state} (${order.shippingAddress?.postalCode})</p>
+        <p style="margin: 0 0 6px 0;"><strong>Courier Partner:</strong> ${esc(courier)}</p>
+        <p style="margin: 0 0 6px 0;"><strong>AWB Tracking Number:</strong> <code style="font-family: monospace; color: #4A1F29; font-weight: bold;">${esc(awb)}</code></p>
+        <p style="margin: 0;"><strong>Destination:</strong> ${esc(order.shippingAddress?.city)}, ${esc(order.shippingAddress?.state)} (${esc(order.shippingAddress?.postalCode)})</p>
       </div>
 
       <p style="font-size: 13px; color: #664B52;">
@@ -504,7 +505,7 @@ export const sendOrderShippedEmail = async ({ order, userEmail, userName }) => {
 
     const html = renderEmailTemplate({
       title: `Order Dispatched: #${shortOrderId} - The Ribbon Story`,
-      preheader: `Your keepsakes from The Ribbon Story are on their way with ${courier}!`,
+      preheader: `Your keepsakes from The Ribbon Story are on their way with ${esc(courier)}!`,
       content,
       actionButton: {
         text: "Track Package Live",
@@ -539,7 +540,7 @@ export const sendOrderDeliveredEmail = async ({ order, userEmail, userName }) =>
         <span class="badge" style="background-color: #F0FDF4; color: #166534; border-color: #BBF7D0;">Delivered Successfully</span>
       </div>
       <h2 class="heading">Your Keepsake Has Arrived! 🎁</h2>
-      <p>Hello <strong>${userName || order.shippingAddress?.name || "Valued Patron"}</strong>,</p>
+      <p>Hello <strong>${esc(userName || order.shippingAddress?.name || "Valued Patron")}</strong>,</p>
       <p>We are thrilled to let you know that your bespoke order <strong>#${shortOrderId}</strong> has been successfully delivered to your doorstep.</p>
       <p>We hope opening your ribbon-sealed parcel brings as much joy as we experienced crafting it in our studio!</p>
     `;
@@ -578,8 +579,8 @@ export const sendReviewRequestEmail = async ({ order, userEmail, userName }) => 
       <div style="margin-bottom: 20px;">
         <span class="badge">Artisan Feedback & Review</span>
       </div>
-      <h2 class="heading">How Did We Do, ${userName || "Friend"}? ⭐</h2>
-      <p>We hope you love your newly arrived keepsake <strong>${primaryItem ? `"${primaryItem.name}"` : ""}</strong>!</p>
+      <h2 class="heading">How Did We Do, ${esc(userName || "Friend")}? ⭐</h2>
+      <p>We hope you love your newly arrived keepsake <strong>${primaryItem ? `"${esc(primaryItem.name)}"` : ""}</strong>!</p>
       <p>Every piece is handcrafted, 3D casted, and hand-finished with utmost care by our studio artisans. Your honest feedback helps us continue our craft and helps other gift-givers celebrate meaningful memories.</p>
 
       <div style="text-align: center; margin: 30px 0; padding: 20px; background-color: #FAF5F2; border-radius: 16px; border: 1px solid #F3D9DC;">
@@ -627,7 +628,7 @@ export const sendWelcomeEmail = async ({ user }) => {
       <div style="margin-bottom: 20px;">
         <span class="badge">Welcome to The Ribbon Story</span>
       </div>
-      <h2 class="heading">Welcome to the Family, ${user.name || "Friend"}! ✨</h2>
+      <h2 class="heading">Welcome to the Family, ${esc(user.name || "Friend")}! ✨</h2>
       <p>We are delighted to welcome you to <strong>The Ribbon Story</strong> — India's premier bespoke 3D keepsakes and handcrafted memory gifting destination.</p>
       
       <div style="background-color: #FAF5F2; border: 1px solid #F3D9DC; border-radius: 16px; padding: 20px; margin: 24px 0;">

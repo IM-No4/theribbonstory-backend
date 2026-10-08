@@ -1,5 +1,7 @@
 import Review from "../models/Review.js";
 import Product from "../models/Product.js";
+import Order from "../models/Order.js";
+import { isObjectId } from "../utils/security.js";
 
 // Helper to recalculate product rating
 const recalculateProductRating = async (productId) => {
@@ -42,25 +44,40 @@ export const createReview = async (req, res) => {
     return res.status(400).json({ message: "Product, rating, and comment are required." });
   }
 
+  if (!isObjectId(productId)) return res.status(400).json({ message: "Invalid product" });
   const product = await Product.findById(productId);
   if (!product) return res.status(404).json({ message: "Product not found" });
+
+  // Only customers who actually ordered the product get a verified, auto-published review
+  const hasPurchased = await Order.exists({
+    user: req.user._id,
+    "items.product": product._id,
+    status: { $ne: "cancelled" },
+  });
 
   const review = await Review.create({
     product: productId,
     user: req.user._id,
     userName: req.user.name,
     userCity: req.user.addresses?.[0]?.city || "Verified Buyer",
-    rating: Math.min(5, Math.max(1, Number(rating))),
-    title: title || "",
-    comment,
-    photos: Array.isArray(photos) ? photos : [],
-    isVerifiedPurchase: true,
-    isApproved: true,
+    rating: Math.min(5, Math.max(1, Math.round(Number(rating)) || 5)),
+    title: String(title || "").slice(0, 150),
+    comment: String(comment).slice(0, 3000),
+    photos: (Array.isArray(photos) ? photos : [])
+      .filter((p) => typeof p === "string" && p.startsWith("/uploads/"))
+      .slice(0, 5),
+    isVerifiedPurchase: Boolean(hasPurchased),
+    isApproved: Boolean(hasPurchased),
   });
 
   await recalculateProductRating(productId);
 
-  return res.status(201).json({ review, message: "Thank you! Your review has been published." });
+  return res.status(201).json({
+    review,
+    message: review.isApproved
+      ? "Thank you! Your review has been published."
+      : "Thank you! Your review will appear once our team has approved it.",
+  });
 };
 
 export const getAdminReviews = async (req, res) => {

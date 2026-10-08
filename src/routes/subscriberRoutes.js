@@ -2,7 +2,7 @@ import express from "express";
 import { asyncHandler } from "../utils/asyncHandler.js";
 import Subscriber from "../models/Subscriber.js";
 import { sendLaunchWaitlistEmail } from "../services/emailService.js";
-import { protect, adminOnly } from "../middleware/authMiddleware.js";
+import { protect, admin } from "../middleware/auth.js";
 
 const router = express.Router();
 
@@ -14,7 +14,7 @@ router.post(
   asyncHandler(async (req, res) => {
     const { email, source } = req.body;
 
-    if (!email || !email.includes("@")) {
+    if (typeof email !== "string" || !email.includes("@") || email.length > 254) {
       return res.status(400).json({ message: "Please provide a valid email address." });
     }
 
@@ -38,8 +38,8 @@ router.post(
     // Create new subscriber
     subscriber = await Subscriber.create({
       email: normalizedEmail,
-      source: source || "coming-soon",
-      ipAddress: req.ip || req.headers["x-forwarded-for"] || "",
+      source: typeof source === "string" ? source.slice(0, 50) : "coming-soon",
+      ipAddress: req.ip || "",
       userAgent: req.headers["user-agent"] || "",
     });
 
@@ -61,7 +61,7 @@ router.post(
 router.get(
   "/",
   protect,
-  adminOnly,
+  admin,
   asyncHandler(async (req, res) => {
     const subscribers = await Subscriber.find().sort({ createdAt: -1 });
     return res.json({

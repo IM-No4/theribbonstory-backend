@@ -1,3 +1,4 @@
+import crypto from "crypto";
 import fs from "fs";
 import path from "path";
 import { fileURLToPath } from "url";
@@ -605,6 +606,26 @@ export const generateReferenceView = async ({
 };
 
 /**
+ * Map a "/uploads/..." URL to a file inside the uploads directory.
+ * Returns null for anything outside uploads/ or that isn't an image.
+ */
+export const resolveUploadedImagePath = (photoUrl) => {
+  if (typeof photoUrl !== "string") return null;
+  let pathname;
+  try {
+    pathname = decodeURIComponent(new URL(photoUrl, "http://local").pathname);
+  } catch {
+    return null;
+  }
+  if (!pathname.startsWith("/uploads/")) return null;
+  if (!/\.(jpe?g|png|webp)$/i.test(pathname)) return null;
+
+  const resolved = path.resolve(uploadsRoot, "." + pathname.slice("/uploads".length));
+  if (!resolved.startsWith(uploadsRoot + path.sep)) return null;
+  return fs.existsSync(resolved) ? resolved : null;
+};
+
+/**
  * Main 4-View Reference Generation Agent Orchestrator
  *
  * Execution Flow:
@@ -623,8 +644,8 @@ export const runReferenceGenerationPipeline = async ({
   userId = null,
   customNotes = "",
 }) => {
-  const sessionId = `ref_${Date.now()}_${Math.random().toString(36).substring(2, 8)}`;
-  const folderName = orderId ? `order_${orderId}` : sessionId;
+  const sessionId = `ref_${Date.now()}_${crypto.randomBytes(16).toString("hex")}`;
+  const folderName = orderId ? `order_${String(orderId).replace(/[^0-9a-fA-F]/g, "")}` : sessionId;
   const targetDir = path.join(reference3dDir, folderName);
 
   if (!fs.existsSync(targetDir)) {
@@ -639,15 +660,7 @@ export const runReferenceGenerationPipeline = async ({
   if (uploadedFile && uploadedFile.path) {
     sourcePath = uploadedFile.path;
   } else if (existingPhotoUrl) {
-    // Relative or absolute path in uploads
-    const cleanUrl = existingPhotoUrl.replace(/^\/+/, "");
-    const possiblePath = path.join(uploadsRoot, "..", cleanUrl);
-    if (fs.existsSync(possiblePath)) {
-      sourcePath = possiblePath;
-    } else {
-      const altPath = path.join(uploadsRoot, path.basename(cleanUrl));
-      if (fs.existsSync(altPath)) sourcePath = altPath;
-    }
+    sourcePath = resolveUploadedImagePath(existingPhotoUrl);
   }
 
   if (sourcePath && fs.existsSync(sourcePath)) {
