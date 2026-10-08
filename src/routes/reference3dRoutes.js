@@ -18,7 +18,7 @@ const router = express.Router();
 // Previews call the paid Gemini image API: limit per IP (uploads + retries)
 const generateLimiter = rateLimit({
   windowMs: 60 * 60 * 1000,
-  max: 12,
+  max: 20,
   standardHeaders: true,
   legacyHeaders: false,
   message: { message: "Too many 3D preview requests. Please try again in an hour." },

@@ -39,12 +39,12 @@ const attachCustomizations = async (orderItems, cartItems, user) => {
       if (!session || ownedByOther || !session.previewIsReal || !PREVIEW_READY_STATES.includes(session.status)) {
         throw new PricingError("Your 3D preview has expired. Please open the keepsake and upload your photo again.");
       }
-      // The customer may have approved an earlier attempt: accept any front
-      // view of THIS session, defaulting to the latest
+      // The customer may have approved an earlier attempt: accept any generated
+      // (PNG, never a placeholder SVG) front view of THIS session, defaulting to the latest
       const folder = `/uploads/3d_references/${session.storageKey}/`;
       const requested = hostedImage(sent.reference3D?.approvedPreview);
       const approvedPreview =
-        requested && requested.startsWith(`${folder}front-`) && resolveUploadedImagePath(requested)
+        requested && requested.startsWith(`${folder}front-`) && requested.endsWith(".png") && resolveUploadedImagePath(requested)
           ? requested
           : session.views.front.url;
 

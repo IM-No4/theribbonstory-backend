@@ -23,6 +23,8 @@ let sessions;
 let user;
 let token;
 let created;
+let clientIp = 0;
+const ip = () => ({ "X-Forwarded-For": `10.0.0.${clientIp}` });
 
 before(async () => {
   server = await startServer();
@@ -75,13 +77,14 @@ const photo = () =>
 const uploadPreview = async (headers = {}) => {
   const form = new FormData();
   form.append("photo", new Blob([await photo()], { type: "image/jpeg" }), "family.jpg");
-  return fetch(`${server.url}/api/3d-agent/preview`, { method: "POST", headers, body: form });
+  return fetch(`${server.url}/api/3d-agent/preview`, { method: "POST", headers: { ...ip(), ...headers }, body: form });
 };
 
 const regenerate = (sessionId) =>
-  fetch(`${server.url}/api/3d-agent/preview/${sessionId}/regenerate`, { method: "POST" });
+  fetch(`${server.url}/api/3d-agent/preview/${sessionId}/regenerate`, { method: "POST", headers: ip() });
 
 beforeEach(async () => {
+  clientIp += 1; // each test is its own visitor for the per-IP preview limit
   geminiCalls = [];
   created = null;
   user = fakeUser();
@@ -134,6 +137,18 @@ describe("Customer 3D preview", () => {
     const body = await (await uploadPreview()).json();
     assert.equal(body.previewAvailable, false);
     assert.equal(body.previewUrl, null);
+  });
+
+  it("a failed retry keeps the customer's current design and doesn't use up an attempt", async () => {
+    const { sessionId, previewUrl } = await (await uploadPreview()).json();
+    delete process.env.GEMINI_API_KEY; // image model goes down
+    const res = await regenerate(sessionId);
+    assert.equal(res.status, 503);
+    const record = sessions.get(sessionId);
+    assert.equal(record.previewIsReal, true);
+    assert.equal(record.views.front.url, previewUrl);
+    assert.equal(record.previewAttempts, 1);
+    assert.equal(record.status, "preview_ready");
   });
 
   it("unknown sessions can't be regenerated", async () => {

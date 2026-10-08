@@ -668,6 +668,15 @@ const generateFrontAttempt = async (record) => {
     sessionId: record.sessionId,
     customNotes: record.customNotes,
   });
+  // A failed retry must not replace (or use up) the design the customer already has
+  if (!result.imageBuffer && record.previewIsReal) {
+    record.status = "preview_ready";
+    record.generationLogs.push({ step: "PREVIEW_RETRY_FAILED", message: "Image model unavailable: kept the current design" });
+    await record.save();
+    const err = new Error("We couldn't create a new design just now. Your current design is kept. Please try again in a minute.");
+    err.statusCode = 503;
+    throw err;
+  }
   const saved = saveView(sessionDir(record), `front-${attempt}`, result);
 
   record.previewAttempts = attempt;
