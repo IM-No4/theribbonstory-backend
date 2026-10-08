@@ -19,6 +19,7 @@ const previewResponse = (record) => ({
   previewAvailable: record.previewIsReal,
   previewUrl: record.previewIsReal ? record.views.front.url : null,
   attemptsLeft: Math.max(0, MAX_PREVIEW_ATTEMPTS - record.previewAttempts),
+  designNote: record.customNotes || "",
 });
 
 /**
@@ -42,7 +43,7 @@ export const createPreview = async (req, res) => {
  * @route POST /api/3d-agent/preview/:sessionId/regenerate
  */
 export const regenerateCustomerPreview = async (req, res) => {
-  const record = await regeneratePreview(req.params.sessionId);
+  const record = await regeneratePreview(req.params.sessionId, { customNotes: req.body?.customNotes });
   return res.json(previewResponse(record));
 };
 
