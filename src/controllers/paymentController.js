@@ -3,6 +3,7 @@ import crypto from "crypto";
 import mongoose from "mongoose";
 import Order from "../models/Order.js";
 import { buildOrderFields, markOrderPaid, PAYMENT_WINDOW_MS } from "../services/orderService.js";
+import { alertPaymentIssue } from "../services/studioAlerts.js";
 import { safeEqual } from "../utils/security.js";
 
 // Wrapped in an object so tests can substitute a fake gateway
@@ -95,12 +96,24 @@ export const razorpayWebhook = async (req, res) => {
     });
     if (!result) {
       console.warn(`[RazorpayWebhook] No order for Razorpay order ${payment.order_id} (payment ${payment.id})`);
+      alertPaymentIssue({
+        razorpayOrderId: payment.order_id,
+        razorpayPaymentId: payment.id,
+        amountPaise: payment.amount,
+        reason: "No matching order (it may have expired before payment completed)",
+      });
       return res.json({ received: true, matched: false });
     }
     return res.json({ received: true, matched: true, newlyPaid: result.newlyPaid });
   } catch (err) {
     // Acknowledge so Razorpay stops retrying; the mismatch needs a human
     console.error(`[RazorpayWebhook] Could not confirm payment ${payment.id}:`, err.message);
+    alertPaymentIssue({
+      razorpayOrderId: payment.order_id,
+      razorpayPaymentId: payment.id,
+      amountPaise: payment.amount,
+      reason: err.message,
+    });
     return res.json({ received: true, error: err.message });
   }
 };

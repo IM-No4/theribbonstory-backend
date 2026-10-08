@@ -4,6 +4,7 @@ import Product from "../models/Product.js";
 import Coupon from "../models/Coupon.js";
 import { computeOrderPricing, PricingError } from "./pricingService.js";
 import { sendOrderConfirmationEmail } from "./emailService.js";
+import { alertNewOrder, checkLowStock } from "./studioAlerts.js";
 
 /** Unpaid online orders are deleted after this long (customer abandoned payment) */
 export const PAYMENT_WINDOW_MS = 3 * 24 * 60 * 60 * 1000;
@@ -173,5 +174,7 @@ export const markOrderPaid = async ({ razorpayOrderId, razorpayPaymentId, razorp
     await consumeCoupon(coupon?._id);
   }
   sendConfirmation(order, order.user);
+  alertNewOrder(order);
+  checkLowStock(order.items);
   return { order, newlyPaid: true };
 };

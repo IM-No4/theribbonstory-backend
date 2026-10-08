@@ -419,3 +419,101 @@ describe("Abandoned checkouts", () => {
     assert.equal(ttl[1].expireAfterSeconds, 0);
   });
 });
+
+describe("Studio alerts", () => {
+  let sent;
+  const settle = () => new Promise((r) => setTimeout(r, 50));
+  const studioMail = () => sent.filter((m) => m.to.includes("studio@example.com"));
+
+  beforeEach(async () => {
+    process.env.STUDIO_ALERT_EMAIL = "studio@example.com, owner@example.com";
+    process.env.LOW_STOCK_THRESHOLD = "5";
+    sent = [];
+    const { getTransporter } = await import("../src/services/emailService.js");
+    mock.method(getTransporter("NOREPLY"), "sendMail", async (mail) => (sent.push(mail), { messageId: "m" }));
+  });
+  afterEach(() => {
+    delete process.env.STUDIO_ALERT_EMAIL;
+    delete process.env.LOW_STOCK_THRESHOLD;
+  });
+
+  it("emails the studio about a new cash-on-delivery order, with customer input escaped", async () => {
+    const res = await post("/api/orders", {
+      items: cart,
+      shippingAddress: { ...address, name: "<script>alert(1)</script>" },
+      paymentMethod: "cod",
+    });
+    assert.equal(res.status, 201);
+    await settle();
+    const [mail] = studioMail();
+    assert.ok(mail, "studio alert sent");
+    assert.equal(mail.to, "studio@example.com, owner@example.com");
+    assert.match(mail.subject, /New order #\w{6} · ₹579 · COD/);
+    assert.match(mail.html, /Magnet/);
+    assert.ok(!mail.html.includes("<script>"), "customer input is escaped");
+  });
+
+  it("emails the studio once when an online payment is confirmed", async () => {
+    await startCheckout();
+    await settle();
+    assert.equal(studioMail().length, 0, "nothing for an unpaid checkout");
+    await webhook(capturedEvent());
+    await webhook(capturedEvent());
+    await settle();
+    const alerts = studioMail().filter((m) => m.subject.includes("New order"));
+    assert.equal(alerts.length, 1);
+    assert.match(alerts[0].subject, /Paid/);
+  });
+
+  it("warns once when a product crosses the low-stock threshold", async () => {
+    product.stock = 6;
+    mock.method(Product, "find", (filter) =>
+      query(filter?.stock?.$lte !== undefined ? (product.stock <= filter.stock.$lte ? [product] : []) : [product])
+    );
+    await post("/api/orders", { items: [{ productId: PRODUCT_ID, quantity: 2 }], shippingAddress: address, paymentMethod: "cod" });
+    await settle();
+    let low = studioMail().filter((m) => m.subject.startsWith("📦 Low stock"));
+    assert.equal(low.length, 1);
+    assert.match(low[0].subject, /Magnet \(4\)/);
+
+    await post("/api/orders", { items: [{ productId: PRODUCT_ID, quantity: 1 }], shippingAddress: address, paymentMethod: "cod" });
+    await settle();
+    low = studioMail().filter((m) => m.subject.startsWith("📦 Low stock"));
+    assert.equal(low.length, 1, "no repeat while already low");
+  });
+
+  it("asks the studio to review a cancellation request for an order in production", async () => {
+    const order = {
+      _id: new mongoose.Types.ObjectId(),
+      user: { _id: user._id, email: user.email, name: user.name },
+      status: "processing",
+      items: [{ name: "Magnet", quantity: 1, price: 500 }],
+      shippingAddress: address,
+      save: async () => {},
+    };
+    mock.method(Order, "findById", () => query(order));
+    const res = await post(`/api/orders/${order._id}/cancel`, { reason: "Ordered the wrong size" });
+    assert.equal(res.status, 200);
+    await settle();
+    const [mail] = studioMail();
+    assert.match(mail.subject, /Cancellation request: #\w{6} \(needs review\)/);
+    assert.match(mail.html, /Ordered the wrong size/);
+  });
+
+  it("flags a payment that could not be matched to an order", async () => {
+    await webhook(capturedEvent(57900, "order_unknown", "pay_orphan"));
+    await settle();
+    const [mail] = studioMail();
+    assert.match(mail.subject, /Payment needs attention: pay_orphan/);
+  });
+
+  it("a mail failure never breaks the order", async () => {
+    const { getTransporter } = await import("../src/services/emailService.js");
+    mock.method(getTransporter("NOREPLY"), "sendMail", async () => {
+      throw new Error("SMTP down");
+    });
+    const res = await post("/api/orders", { items: cart, shippingAddress: address, paymentMethod: "cod" });
+    assert.equal(res.status, 201);
+    await settle();
+  });
+});
