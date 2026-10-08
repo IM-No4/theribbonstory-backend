@@ -655,6 +655,24 @@ const sessionDir = (record) => {
   return dir;
 };
 
+/** Update the reference3D of the order item(s) that use a session */
+const updateOrderReferences = async (orderId, sessionId, fields) => {
+  if (!orderId) return;
+  const order = await Order.findById(orderId);
+  if (!order) return;
+  let changed = false;
+  order.items.forEach((item) => {
+    const ref = item.customization?.reference3D;
+    if (ref?.sessionId !== sessionId) return;
+    Object.assign(ref, fields);
+    changed = true;
+  });
+  if (changed) {
+    order.markModified("items");
+    await order.save();
+  }
+};
+
 /** Generate one front-view attempt for a session and record it */
 const generateFrontAttempt = async (record) => {
   const attempt = record.previewAttempts + 1;
@@ -837,30 +855,15 @@ export const completeReferencePack = async ({ sessionId, approvedFrontPath, orde
     await record.save();
 
     // Attach the pack to the order item(s) that used this session
-    if (orderId) {
-      const order = await Order.findById(orderId);
-      if (order) {
-        let changed = false;
-        order.items.forEach((item) => {
-          const ref = item.customization?.reference3D;
-          if (ref?.sessionId !== record.sessionId) return;
-          Object.assign(ref, {
-            front: uploadsUrl(frontCopy),
-            left: record.views.left.url,
-            right: record.views.right.url,
-            back: record.views.back.url,
-            zipUrl: record.zipPackageUrl,
-            status: "completed",
-            generatedAt: new Date(),
-          });
-          changed = true;
-        });
-        if (changed) {
-          order.markModified("items");
-          await order.save();
-        }
-      }
-    }
+    await updateOrderReferences(orderId, record.sessionId, {
+      front: uploadsUrl(frontCopy),
+      left: record.views.left.url,
+      right: record.views.right.url,
+      back: record.views.back.url,
+      zipUrl: record.zipPackageUrl,
+      status: "completed",
+      generatedAt: new Date(),
+    });
     return record;
   } catch (err) {
     console.error("[Gemini 3D Agent] Reference pack failed:", err);
@@ -868,6 +871,8 @@ export const completeReferencePack = async ({ sessionId, approvedFrontPath, orde
     record.errorMessage = err.message;
     record.generationLogs.push({ step: "PIPELINE_ERROR", message: err.message });
     await record.save();
+    // Let the studio see it failed (and retry) instead of waiting forever
+    await updateOrderReferences(orderId, record.sessionId, { status: "failed" }).catch(() => {});
     throw err;
   }
 };
