@@ -140,6 +140,7 @@ export const computeOrderPricing = async ({ items, couponCode, deliverySlot }) =
 
     return {
       product: linkedProduct._id,
+      fromCatalog: Boolean(product),
       name: String(item.name || product?.name || "Custom 3D Keepsake").slice(0, 200),
       image: item.image || item.customization?.photoUrl || linkedProduct.images?.[0],
       price: unitPrice,

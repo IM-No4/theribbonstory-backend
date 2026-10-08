@@ -122,6 +122,10 @@ export const getOrderById = async (req, res) => {
   if (String(order.user?._id || order.user) !== String(req.user._id) && req.user.role !== "admin") {
     return res.status(403).json({ message: "Not authorized to view this order" });
   }
+  if (req.user.role === "admin") {
+    const [withFiles] = await withPrintFiles([order]);
+    return res.json({ order: withFiles });
+  }
   return res.json({ order });
 };
 
@@ -175,6 +179,32 @@ export const trackOrder = async (req, res) => {
   });
 };
 
+/**
+ * Admin views: mark each order item whose product has a production print
+ * file attached, so the studio can download it from the order.
+ */
+const withPrintFiles = async (orders) => {
+  const productIds = [
+    ...new Set(
+      orders.flatMap((o) => (o.items || []).filter((i) => i.fromCatalog !== false && i.product).map((i) => String(i.product)))
+    ),
+  ];
+  const printable = productIds.length
+    ? await Product.find({ _id: { $in: productIds }, "printFile.filename": { $exists: true } }).select("+printFile")
+    : [];
+  const files = new Map(
+    printable.map((p) => [String(p._id), { originalName: p.printFile.originalName, size: p.printFile.size }])
+  );
+  return orders.map((o) => {
+    const order = typeof o.toObject === "function" ? o.toObject() : o;
+    order.items = (order.items || []).map((i) => ({
+      ...i,
+      printFile: i.fromCatalog !== false && i.product ? files.get(String(i.product)) || null : null,
+    }));
+    return order;
+  });
+};
+
 // Admin Controllers
 export const getAdminOrders = async (req, res) => {
   const { status, search } = req.query;
@@ -197,7 +227,7 @@ export const getAdminOrders = async (req, res) => {
     );
   }
 
-  return res.json({ orders: results, count: results.length });
+  return res.json({ orders: await withPrintFiles(results), count: results.length });
 };
 
 export const updateOrderStatus = async (req, res) => {

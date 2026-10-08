@@ -42,6 +42,18 @@ const productSchema = new mongoose.Schema(
     isFeatured: { type: Boolean, default: false },
     isBestseller: { type: Boolean, default: false },
     isActive: { type: Boolean, default: true },
+    // Production 3D print file (STL/3MF/OBJ) for the studio team. Never sent to
+    // customers: excluded from queries unless explicitly selected (+printFile).
+    printFile: {
+      type: {
+        filename: String, // stored name in private_uploads/print-files
+        originalName: String,
+        size: Number,
+        uploadedAt: Date,
+      },
+      select: false,
+      default: undefined,
+    },
   },
   { timestamps: true }
 );
