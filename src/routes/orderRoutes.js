@@ -6,6 +6,7 @@ import {
   trackOrder,
   getAdminOrders,
   updateOrderStatus,
+  getSalesReport,
   getAdminStats,
   issueOrderRefund,
   requestOrderCancellation,
@@ -19,6 +20,7 @@ const router = express.Router();
 
 // Admin Routes (mounted first)
 router.get("/admin/stats", protect, admin, asyncHandler(getAdminStats));
+router.get("/admin/sales", protect, admin, asyncHandler(getSalesReport));
 router.get("/admin/all", protect, admin, asyncHandler(getAdminOrders));
 router.put("/:id/status", protect, admin, asyncHandler(updateOrderStatus));
 router.post("/:id/refund", protect, admin, asyncHandler(issueOrderRefund));

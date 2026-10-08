@@ -16,6 +16,7 @@ import { alertNewOrder, alertCancellation, checkLowStock } from "../services/stu
 import { findOrderByPublicIdentifier } from "../utils/orderLookup.js";
 import { sendRefundNotificationEmail } from "../services/emailService.js";
 import { notifyStatusChange } from "../services/orderNotifications.js";
+import { salesReport } from "../services/salesReport.js";
 
 /**
  * Cash-on-delivery orders. Online (Razorpay) orders are created by
@@ -237,6 +238,11 @@ export const updateOrderStatus = async (req, res) => {
   return res.json({ order, message: `Order status updated to ${order.status}` });
 };
 
+/** Admin sales dashboard: ?range=today|7d|30d */
+export const getSalesReport = async (req, res) => {
+  res.json(await salesReport(String(req.query.range || "7d")));
+};
+
 export const getAdminStats = async (req, res) => {
   const [totalProducts, totalCategories, orders, lowStockProducts] = await Promise.all([
     Product.countDocuments(),
@@ -246,7 +252,10 @@ export const getAdminStats = async (req, res) => {
   ]);
 
   const totalOrders = orders.length;
-  const totalRevenue = orders.reduce((sum, o) => sum + (o.totalPrice || 0), 0);
+  // Cancelled and refunded orders aren't revenue
+  const totalRevenue = orders
+    .filter((o) => o.status !== "cancelled" && !(o.isRefunded && o.refundStatus === "refunded"))
+    .reduce((sum, o) => sum + (o.totalPrice || 0), 0);
   const pendingOrders = orders.filter((o) => o.status === "pending" || o.status === "confirmed").length;
   const deliveredOrders = orders.filter((o) => o.status === "delivered").length;
   const recentOrders = orders.slice(0, 5);
