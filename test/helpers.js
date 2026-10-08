@@ -42,6 +42,7 @@ export const query = (value) => {
     limit: () => q,
     skip: () => q,
     populate: () => q,
+    lean: () => q,
     exec: async () => value,
     then: (resolve, reject) => Promise.resolve(value).then(resolve, reject),
   };

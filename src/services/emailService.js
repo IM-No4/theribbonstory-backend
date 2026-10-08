@@ -1,8 +1,12 @@
 import nodemailer from "nodemailer";
 import { escapeHtml as esc } from "../utils/security.js";
 import dotenv from "dotenv";
+import { absoluteImageUrl } from "../routes/seoRoutes.js";
 
 dotenv.config();
+
+/** Storefront base URL for links in emails (CLIENT_URL may list several origins) */
+const storefrontUrl = () => (process.env.CLIENT_URL || "http://localhost:5173").split(",")[0].trim().replace(/\/$/, "");
 
 // Senders Configuration
 export const EMAIL_SENDERS = {
@@ -58,7 +62,7 @@ export const getTransporter = (type = "NOREPLY") => {
  * Luxury Branded Email Layout Wrapper
  */
 const renderEmailTemplate = ({ title, preheader, content, actionButton }) => {
-  const clientUrl = process.env.CLIENT_URL || "http://localhost:5173";
+  const clientUrl = storefrontUrl();
 
   return `
 <!DOCTYPE html>
@@ -131,13 +135,27 @@ const renderEmailTemplate = ({ title, preheader, content, actionButton }) => {
 /**
  * 1. Order Confirmation Email (Sent on successful placement)
  */
+/** The customer's approved 3D design, inscription and note for one order item */
+const personalisationHtml = (item) => {
+  const c = item.customization || {};
+  const inscription = [c.customName, c.customDate].filter(Boolean).join(" · ");
+  const note = c.note && c.note !== c.customName ? c.note : "";
+  return [
+    c.reference3D?.approvedPreview
+      ? `<div style="margin-top: 8px;"><img src="${esc(absoluteImageUrl(c.reference3D.approvedPreview))}" alt="Your approved 3D design" width="96" height="96" style="border-radius: 10px; border: 1px solid #F3D9DC; background: #ffffff; object-fit: contain;"><div style="font-size: 11px; color: #166534; margin-top: 2px;">Your approved 3D design: this is what we'll craft</div></div>`
+      : "",
+    inscription ? `<div style="font-size: 11px; color: #4A1F29; margin-top: 2px;">Inscription: <strong>${esc(inscription)}</strong></div>` : "",
+    note ? `<div style="font-size: 11px; color: #9E3D52; font-style: italic; margin-top: 2px;">"${esc(note)}"</div>` : "",
+  ].join("");
+};
+
 export const sendOrderConfirmationEmail = async ({ order, userEmail, userName }) => {
   try {
     const mailClient = getTransporter("NOREPLY");
     const recipient = userEmail || order.shippingAddress?.email || order.user?.email;
     if (!recipient) return;
 
-    const clientUrl = process.env.CLIENT_URL || "http://localhost:5173";
+    const clientUrl = storefrontUrl();
     const shortOrderId = order._id.toString().slice(-6).toUpperCase();
     const recipientName = userName || order.shippingAddress?.name || order.user?.name || "Valued Patron";
 
@@ -154,11 +172,7 @@ export const sendOrderConfirmationEmail = async ({ order, userEmail, userName })
                   .join(" | ")}</div>`
               : ""
           }
-          ${
-            item.customization?.note
-              ? `<div style="font-size: 11px; color: #9E3D52; font-style: italic; margin-top: 2px;">"${esc(item.customization.note)}"</div>`
-              : ""
-          }
+          ${personalisationHtml(item)}
         </td>
         <td style="padding: 12px 0; text-align: center; color: #664B52; font-size: 13px;">Qty: ${item.quantity}</td>
         <td style="padding: 12px 0; text-align: right; font-weight: bold; color: #4A1F29; font-size: 14px;">₹${item.price * item.quantity}</td>
@@ -252,7 +266,7 @@ export const sendOrderConfirmationEmail = async ({ order, userEmail, userName })
 export const sendForgotPasswordEmail = async ({ user, resetToken }) => {
   try {
     const mailClient = getTransporter("NOREPLY");
-    const clientUrl = process.env.CLIENT_URL || "http://localhost:5173";
+    const clientUrl = storefrontUrl();
     const resetUrl = `${clientUrl}/reset-password?token=${resetToken}`;
 
     const content = `
@@ -296,7 +310,7 @@ export const sendForgotPasswordEmail = async ({ user, resetToken }) => {
 export const sendSetPasswordEmail = async ({ user, setPasswordToken }) => {
   try {
     const mailClient = getTransporter("NOREPLY");
-    const clientUrl = process.env.CLIENT_URL || "http://localhost:5173";
+    const clientUrl = storefrontUrl();
     const setUrl = `${clientUrl}/reset-password?token=${setPasswordToken}&mode=set`;
 
     const content = `
@@ -471,44 +485,44 @@ export const sendContactInquiryEmails = async ({ name, email, phone, subject, me
 };
 
 /**
- * 7. Order Shipped & In-Transit Notification Email
+ * 7. Order Shipped Email
  */
 export const sendOrderShippedEmail = async ({ order, userEmail, userName }) => {
   try {
     const mailClient = getTransporter("NOREPLY");
-    const recipient = userEmail || order.shippingAddress?.email || order.user?.email;
+    const recipient = userEmail || order.user?.email;
     if (!recipient) return;
 
-    const clientUrl = process.env.CLIENT_URL || "http://localhost:5173";
+    const clientUrl = storefrontUrl();
     const shortOrderId = order._id.toString().slice(-6).toUpperCase();
-    const courier = order.courierPartner || order.courierName || "BlueDart Express (Shiprocket)";
-    const awb = order.awbCode || order.trackingNumber || "SR-PENDING";
+    // Only show tracking details that really exist (no placeholder courier)
+    const awb = order.awbCode || order.trackingNumber || "";
+    const courier = awb ? order.courierName || order.courierPartner || "" : "";
 
     const content = `
       <div style="margin-bottom: 20px;">
-        <span class="badge" style="background-color: #EEF2FF; color: #4338CA; border-color: #C7D2FE;">Package On The Way • #${shortOrderId}</span>
+        <span class="badge" style="background-color: #EEF2FF; color: #4338CA; border-color: #C7D2FE;">On Its Way • #${shortOrderId}</span>
       </div>
-      <h2 class="heading">Your Keepsake Has Been Dispatched! 🚚</h2>
-      <p>Hello <strong>${esc(userName || order.shippingAddress?.name || "Valued Patron")}</strong>,</p>
-      <p>Great news! Your handcrafted keepsake order <strong>#${shortOrderId}</strong> has completed studio quality inspections and is safely in transit with our logistics partner.</p>
-      
+      <h2 class="heading">Your Keepsake Has Been Shipped! 🚚</h2>
+      <p>Hello <strong>${esc(userName || order.shippingAddress?.name || "there")}</strong>,</p>
+      <p>Great news! Your order <strong>#${shortOrderId}</strong> has passed our studio's final checks and is on its way to you.</p>
+
       <div style="background-color: #FAF5F2; border: 1px solid #F3D9DC; border-radius: 16px; padding: 18px; margin: 20px 0; font-size: 13px;">
-        <p style="margin: 0 0 6px 0;"><strong>Courier Partner:</strong> ${esc(courier)}</p>
-        <p style="margin: 0 0 6px 0;"><strong>AWB Tracking Number:</strong> <code style="font-family: monospace; color: #4A1F29; font-weight: bold;">${esc(awb)}</code></p>
-        <p style="margin: 0;"><strong>Destination:</strong> ${esc(order.shippingAddress?.city)}, ${esc(order.shippingAddress?.state)} (${esc(order.shippingAddress?.postalCode)})</p>
+        ${courier ? `<p style="margin: 0 0 6px 0;"><strong>Courier:</strong> ${esc(courier)}</p>` : ""}
+        ${awb ? `<p style="margin: 0 0 6px 0;"><strong>Tracking number:</strong> <code style="font-family: monospace; color: #4A1F29; font-weight: bold;">${esc(awb)}</code></p>` : ""}
+        ${order.estimatedDelivery ? `<p style="margin: 0 0 6px 0;"><strong>Expected by:</strong> ${esc(new Date(order.estimatedDelivery).toLocaleDateString("en-IN", { day: "numeric", month: "long" }))}</p>` : ""}
+        <p style="margin: 0;"><strong>Delivering to:</strong> ${esc([order.shippingAddress?.city, order.shippingAddress?.state].filter(Boolean).join(", "))} (${esc(order.shippingAddress?.postalCode)})</p>
       </div>
 
-      <p style="font-size: 13px; color: #664B52;">
-        You can follow the real-time live checkpoints on our Shiprocket Radar tracker anytime.
-      </p>
+      <p style="font-size: 13px; color: #664B52;">Follow your parcel any time with the button below.</p>
     `;
 
     const html = renderEmailTemplate({
-      title: `Order Dispatched: #${shortOrderId} - The Ribbon Story`,
-      preheader: `Your keepsakes from The Ribbon Story are on their way with ${esc(courier)}!`,
+      title: `Order Shipped: #${shortOrderId} - The Ribbon Story`,
+      preheader: `Your order #${shortOrderId} from The Ribbon Story is on its way!`,
       content,
       actionButton: {
-        text: "Track Package Live",
+        text: "Track Your Order",
         url: `${clientUrl}/track-order?id=${order._id}`,
       },
     });
@@ -516,103 +530,63 @@ export const sendOrderShippedEmail = async ({ order, userEmail, userName }) => {
     await mailClient.sendMail({
       from: EMAIL_SENDERS.NOREPLY,
       to: recipient,
-      subject: `🚚 Your Keepsake Order #${shortOrderId} Has Been Shipped!`,
+      subject: `🚚 Your order #${shortOrderId} has been shipped!`,
       html,
     });
+    return true;
   } catch (err) {
     console.error("[EmailService] Error sending order shipped email:", err);
+    return false;
   }
 };
 
 /**
- * 8. Order Delivered Notification Email
+ * 8. Order Delivered Email, with a link to review what they received
  */
-export const sendOrderDeliveredEmail = async ({ order, userEmail, userName }) => {
+export const sendOrderDeliveredEmail = async ({ order, userEmail, userName, reviewPath = "/account" }) => {
   try {
     const mailClient = getTransporter("NOREPLY");
-    const recipient = userEmail || order.shippingAddress?.email || order.user?.email;
+    const recipient = userEmail || order.user?.email;
     if (!recipient) return;
 
+    const clientUrl = storefrontUrl();
     const shortOrderId = order._id.toString().slice(-6).toUpperCase();
 
     const content = `
       <div style="margin-bottom: 20px;">
-        <span class="badge" style="background-color: #F0FDF4; color: #166534; border-color: #BBF7D0;">Delivered Successfully</span>
+        <span class="badge" style="background-color: #F0FDF4; color: #166534; border-color: #BBF7D0;">Delivered • #${shortOrderId}</span>
       </div>
       <h2 class="heading">Your Keepsake Has Arrived! 🎁</h2>
-      <p>Hello <strong>${esc(userName || order.shippingAddress?.name || "Valued Patron")}</strong>,</p>
-      <p>We are thrilled to let you know that your bespoke order <strong>#${shortOrderId}</strong> has been successfully delivered to your doorstep.</p>
-      <p>We hope opening your ribbon-sealed parcel brings as much joy as we experienced crafting it in our studio!</p>
+      <p>Hello <strong>${esc(userName || order.shippingAddress?.name || "there")}</strong>,</p>
+      <p>Your order <strong>#${shortOrderId}</strong> has been delivered. We hope opening it brings as much joy as we had making it!</p>
+
+      <div style="text-align: center; margin: 26px 0; padding: 20px; background-color: #FAF5F2; border-radius: 16px; border: 1px solid #F3D9DC;">
+        <p style="margin: 0 0 10px 0; font-size: 13px; font-weight: bold; color: #4A1F29;">Loved it? Tell others in a quick review</p>
+        <a href="${clientUrl}${reviewPath}" style="text-decoration: none; color: #EAB308; font-size: 30px; letter-spacing: 10px;">★★★★★</a>
+        <p style="margin: 10px 0 0 0; font-size: 12px; color: #8A6D74;">An unboxing photo helps other gift-givers most.</p>
+      </div>
+
+      <p style="font-size: 13px; color: #664B52;">Something not right? Just reply to this email and our studio will make it right.</p>
     `;
 
     const html = renderEmailTemplate({
-      title: `Order Delivered: #${shortOrderId} - The Ribbon Story`,
-      preheader: `Your package #${shortOrderId} has been safely delivered!`,
+      title: `Delivered: #${shortOrderId} - The Ribbon Story`,
+      preheader: `Your order #${shortOrderId} has been delivered. How did we do?`,
       content,
+      actionButton: { text: "Leave a Review", url: `${clientUrl}${reviewPath}` },
     });
 
     await mailClient.sendMail({
       from: EMAIL_SENDERS.NOREPLY,
+      replyTo: EMAIL_SENDERS.SUPPORT,
       to: recipient,
-      subject: `🎁 Delivered: Your Ribbon Story Order #${shortOrderId} Has Arrived!`,
+      subject: `🎁 Delivered: your order #${shortOrderId} has arrived!`,
       html,
     });
+    return true;
   } catch (err) {
     console.error("[EmailService] Error sending order delivered email:", err);
-  }
-};
-
-/**
- * 9. Rating & Product Review Request Email (Sent after delivery)
- */
-export const sendReviewRequestEmail = async ({ order, userEmail, userName }) => {
-  try {
-    const mailClient = getTransporter("SUPPORT");
-    const recipient = userEmail || order.shippingAddress?.email || order.user?.email;
-    if (!recipient) return;
-
-    const clientUrl = process.env.CLIENT_URL || "http://localhost:5173";
-    const shortOrderId = order._id.toString().slice(-6).toUpperCase();
-    const primaryItem = order.items?.[0];
-
-    const content = `
-      <div style="margin-bottom: 20px;">
-        <span class="badge">Artisan Feedback & Review</span>
-      </div>
-      <h2 class="heading">How Did We Do, ${esc(userName || "Friend")}? ⭐</h2>
-      <p>We hope you love your newly arrived keepsake <strong>${primaryItem ? `"${esc(primaryItem.name)}"` : ""}</strong>!</p>
-      <p>Every piece is handcrafted, 3D casted, and hand-finished with utmost care by our studio artisans. Your honest feedback helps us continue our craft and helps other gift-givers celebrate meaningful memories.</p>
-
-      <div style="text-align: center; margin: 30px 0; padding: 20px; background-color: #FAF5F2; border-radius: 16px; border: 1px solid #F3D9DC;">
-        <p style="margin: 0 0 12px 0; font-size: 13px; font-weight: bold; color: #4A1F29; text-transform: uppercase; letter-spacing: 0.5px;">Tap a star to rate your keepsake</p>
-        <div style="font-size: 32px; letter-spacing: 12px; cursor: pointer;">
-          <a href="${clientUrl}/account" style="text-decoration: none; color: #EAB308;">★★★★★</a>
-        </div>
-      </div>
-
-      <p style="font-size: 13px; color: #664B52;">
-        You can also share unboxing photos and write a quick review directly from your account page.
-      </p>
-    `;
-
-    const html = renderEmailTemplate({
-      title: `Rate Your Keepsake Experience - The Ribbon Story`,
-      preheader: `How was your order #${shortOrderId}? Share your honest feedback with our studio artisans!`,
-      content,
-      actionButton: {
-        text: "Write a Review & Upload Photo",
-        url: `${clientUrl}/account`,
-      },
-    });
-
-    await mailClient.sendMail({
-      from: EMAIL_SENDERS.SUPPORT,
-      to: recipient,
-      subject: `⭐ How did you love your Keepsake? (Order #${shortOrderId})`,
-      html,
-    });
-  } catch (err) {
-    console.error("[EmailService] Error sending review request email:", err);
+    return false;
   }
 };
 
@@ -622,7 +596,7 @@ export const sendReviewRequestEmail = async ({ order, userEmail, userName }) => 
 export const sendWelcomeEmail = async ({ user }) => {
   try {
     const mailClient = getTransporter("NOREPLY");
-    const clientUrl = process.env.CLIENT_URL || "http://localhost:5173";
+    const clientUrl = storefrontUrl();
 
     const content = `
       <div style="margin-bottom: 20px;">

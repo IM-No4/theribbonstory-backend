@@ -68,6 +68,9 @@ const reference3DSchema = new mongoose.Schema(
     // placeholders are never offered to customers as their design
     previewIsReal: { type: Boolean, default: false },
     customNotes: { type: String, default: "" },
+    // "customer" previews that never make it into an order are deleted after
+    // a week (see services/previewCleanup.js); admin studio sessions are kept
+    source: { type: String, enum: ["customer", "ordered", "admin"], default: "admin" },
 
     readinessScore: {
       overall: { type: Number, default: 95 },
@@ -103,5 +106,6 @@ const reference3DSchema = new mongoose.Schema(
 );
 
 reference3DSchema.index({ createdAt: -1 });
+reference3DSchema.index({ source: 1, createdAt: 1 });
 
 export default mongoose.model("Reference3D", reference3DSchema);

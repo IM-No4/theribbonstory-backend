@@ -14,12 +14,9 @@ import {
 import { isObjectId } from "../utils/security.js";
 import { alertNewOrder, alertCancellation, checkLowStock } from "../services/studioAlerts.js";
 import { findOrderByPublicIdentifier } from "../utils/orderLookup.js";
-import {
-  sendRefundNotificationEmail,
-  sendOrderShippedEmail,
-  sendOrderDeliveredEmail,
-  sendReviewRequestEmail,
-} from "../services/emailService.js";
+import { sendRefundNotificationEmail } from "../services/emailService.js";
+import { notifyStatusChange } from "../services/orderNotifications.js";
+import { salesReport } from "../services/salesReport.js";
 
 /**
  * Cash-on-delivery orders. Online (Razorpay) orders are created by
@@ -235,31 +232,15 @@ export const updateOrderStatus = async (req, res) => {
   await order.save();
   if (status === "cancelled" && oldStatus !== "cancelled") await restoreStock(order._id);
 
-  // Dispatch Status Change Emails Asynchronously
-  if (status && status !== oldStatus) {
-    if (status === "shipped") {
-      sendOrderShippedEmail({
-        order,
-        userEmail: order.user?.email || order.shippingAddress?.email,
-        userName: order.user?.name || order.shippingAddress?.name,
-      }).catch((err) => console.error("[OrderController] Failed to dispatch shipped email:", err));
-    } else if (status === "delivered") {
-      sendOrderDeliveredEmail({
-        order,
-        userEmail: order.user?.email || order.shippingAddress?.email,
-        userName: order.user?.name || order.shippingAddress?.name,
-      }).catch((err) => console.error("[OrderController] Failed to dispatch delivered email:", err));
-
-      // Also trigger 5-star Review Request Email
-      sendReviewRequestEmail({
-        order,
-        userEmail: order.user?.email || order.shippingAddress?.email,
-        userName: order.user?.name || order.shippingAddress?.name,
-      }).catch((err) => console.error("[OrderController] Failed to dispatch review email:", err));
-    }
-  }
+  // Shipped / delivered emails to the customer (each sent once)
+  notifyStatusChange(order, oldStatus);
 
   return res.json({ order, message: `Order status updated to ${order.status}` });
+};
+
+/** Admin sales dashboard: ?range=today|7d|30d */
+export const getSalesReport = async (req, res) => {
+  res.json(await salesReport(String(req.query.range || "7d")));
 };
 
 export const getAdminStats = async (req, res) => {
@@ -271,7 +252,10 @@ export const getAdminStats = async (req, res) => {
   ]);
 
   const totalOrders = orders.length;
-  const totalRevenue = orders.reduce((sum, o) => sum + (o.totalPrice || 0), 0);
+  // Cancelled and refunded orders aren't revenue
+  const totalRevenue = orders
+    .filter((o) => o.status !== "cancelled" && !(o.isRefunded && o.refundStatus === "refunded"))
+    .reduce((sum, o) => sum + (o.totalPrice || 0), 0);
   const pendingOrders = orders.filter((o) => o.status === "pending" || o.status === "confirmed").length;
   const deliveredOrders = orders.filter((o) => o.status === "delivered").length;
   const recentOrders = orders.slice(0, 5);
