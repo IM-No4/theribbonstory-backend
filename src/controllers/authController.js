@@ -1,4 +1,5 @@
 import crypto from "crypto";
+import { OAuth2Client } from "google-auth-library";
 import User from "../models/User.js";
 import { generateToken } from "../utils/generateToken.js";
 import {
@@ -10,8 +11,11 @@ import {
 
 export const register = async (req, res) => {
   const { name, email, password } = req.body;
-  if (!name || !email || !password) {
+  if (typeof name !== "string" || typeof email !== "string" || typeof password !== "string" || !name || !email || !password) {
     return res.status(400).json({ message: "Name, email and password are required" });
+  }
+  if (password.length < 8) {
+    return res.status(400).json({ message: "Password must be at least 8 characters" });
   }
   const existing = await User.findOne({ email: email.toLowerCase() });
   if (existing) return res.status(409).json({ message: "An account with this email already exists" });
@@ -31,7 +35,9 @@ export const register = async (req, res) => {
 
 export const login = async (req, res) => {
   const { email, password } = req.body;
-  if (!email || !password) return res.status(400).json({ message: "Email and password are required" });
+  if (typeof email !== "string" || typeof password !== "string" || !email || !password) {
+    return res.status(400).json({ message: "Email and password are required" });
+  }
 
   const user = await User.findOne({ email: email.toLowerCase() });
   if (!user || !(await user.comparePassword(password))) {
@@ -43,30 +49,68 @@ export const login = async (req, res) => {
   });
 };
 
-export const googleAuth = async (req, res) => {
-  let { credential, email, name, googleId, picture } = req.body;
+const googleClient = new OAuth2Client();
 
-  // Decode Google ID Token if passed as credential
-  if (credential) {
-    try {
-      const parts = credential.split(".");
-      if (parts.length === 3) {
-        const payload = JSON.parse(Buffer.from(parts[1], "base64").toString("utf8"));
-        email = payload.email || email;
-        name = payload.name || name;
-        googleId = payload.sub || googleId;
-        picture = payload.picture || picture;
-      }
-    } catch (e) {
-      console.warn("[AuthController] Could not decode Google credential token:", e.message);
+const getGoogleClientIds = () =>
+  (process.env.GOOGLE_CLIENT_ID || "")
+    .split(",")
+    .map((s) => s.trim())
+    .filter(Boolean);
+
+/**
+ * Resolve a verified Google profile from either a GIS ID token (credential)
+ * or an OAuth access token. Never trusts client-supplied email/name fields.
+ */
+const getVerifiedGoogleProfile = async ({ credential, accessToken }) => {
+  const audience = getGoogleClientIds();
+  if (audience.length === 0) {
+    const err = new Error("Google sign-in is not configured on the server (GOOGLE_CLIENT_ID missing)");
+    err.statusCode = 503;
+    throw err;
+  }
+
+  if (typeof credential === "string" && credential) {
+    const ticket = await googleClient.verifyIdToken({ idToken: credential, audience });
+    const payload = ticket.getPayload();
+    return { email: payload.email, emailVerified: payload.email_verified, name: payload.name, googleId: payload.sub };
+  }
+
+  if (typeof accessToken === "string" && accessToken) {
+    const info = await googleClient.getTokenInfo(accessToken);
+    if (!audience.includes(info.aud) && !audience.includes(info.azp)) {
+      throw new Error("Google token was not issued for this application");
     }
+    const profileRes = await fetch("https://www.googleapis.com/oauth2/v3/userinfo", {
+      headers: { Authorization: `Bearer ${accessToken}` },
+    });
+    if (!profileRes.ok) throw new Error("Could not fetch Google profile");
+    const profile = await profileRes.json();
+    if (profile.sub !== info.sub) throw new Error("Google profile mismatch");
+    return { email: profile.email, emailVerified: profile.email_verified, name: profile.name, googleId: profile.sub };
   }
 
-  if (!email) {
-    return res.status(400).json({ message: "Email is required for Google authentication" });
+  return null;
+};
+
+export const googleAuth = async (req, res) => {
+  let profile;
+  try {
+    profile = await getVerifiedGoogleProfile(req.body || {});
+  } catch (e) {
+    if (e.statusCode) return res.status(e.statusCode).json({ message: e.message });
+    console.warn("[AuthController] Google token verification failed:", e.message);
+    return res.status(401).json({ message: "Google sign-in could not be verified. Please try again." });
   }
 
-  const cleanEmail = email.trim().toLowerCase();
+  if (!profile) {
+    return res.status(400).json({ message: "A Google credential is required" });
+  }
+  if (!profile.email || !profile.emailVerified) {
+    return res.status(401).json({ message: "Your Google account email is not verified" });
+  }
+
+  const cleanEmail = profile.email.trim().toLowerCase();
+  const name = profile.name;
   let user = await User.findOne({ email: cleanEmail });
   let isNewUser = false;
 
@@ -106,17 +150,32 @@ export const getMe = async (req, res) => {
 };
 
 export const updateProfile = async (req, res) => {
-  const { name, email, password } = req.body;
+  const { name, email, password, currentPassword } = req.body;
   const user = await User.findById(req.user._id);
   if (!user) return res.status(404).json({ message: "User not found" });
 
-  if (name) user.name = name;
-  if (email) {
-    const existing = await User.findOne({ email: email.toLowerCase(), _id: { $ne: user._id } });
-    if (existing) return res.status(409).json({ message: "Email already in use" });
-    user.email = email.toLowerCase();
+  const newEmail = typeof email === "string" ? email.trim().toLowerCase() : "";
+  const changingEmail = newEmail && newEmail !== user.email;
+  const changingPassword = typeof password === "string" && password.length > 0;
+
+  if (changingEmail || changingPassword) {
+    if (typeof currentPassword !== "string" || !(await user.comparePassword(currentPassword))) {
+      return res.status(401).json({
+        message: "Please enter your current password to change your email or password",
+      });
+    }
   }
-  if (password) user.password = password;
+  if (changingPassword && password.length < 8) {
+    return res.status(400).json({ message: "Password must be at least 8 characters" });
+  }
+
+  if (typeof name === "string" && name.trim()) user.name = name.trim();
+  if (changingEmail) {
+    const existing = await User.findOne({ email: newEmail, _id: { $ne: user._id } });
+    if (existing) return res.status(409).json({ message: "Email already in use" });
+    user.email = newEmail;
+  }
+  if (changingPassword) user.password = password;
 
   await user.save();
   return res.json({ user: user.toSafeObject(), message: "Profile updated successfully" });
@@ -142,7 +201,9 @@ export const deleteAddress = async (req, res) => {
  */
 export const forgotPassword = async (req, res) => {
   const { email } = req.body;
-  if (!email) return res.status(400).json({ message: "Please provide your registered email address" });
+  if (typeof email !== "string" || !email) {
+    return res.status(400).json({ message: "Please provide your registered email address" });
+  }
 
   const user = await User.findOne({ email: email.toLowerCase() });
   if (!user) {
@@ -165,7 +226,7 @@ export const forgotPassword = async (req, res) => {
   await sendForgotPasswordEmail({ user, resetToken });
 
   return res.json({
-    message: "Password reset link has been dispatched to your email address.",
+    message: "If an account exists with this email, a password reset link has been dispatched.",
   });
 };
 
@@ -174,11 +235,13 @@ export const forgotPassword = async (req, res) => {
  */
 export const requestSetPassword = async (req, res) => {
   const { email } = req.body;
-  if (!email) return res.status(400).json({ message: "Please provide your registered email address" });
+  if (typeof email !== "string" || !email) {
+    return res.status(400).json({ message: "Please provide your registered email address" });
+  }
 
   const user = await User.findOne({ email: email.toLowerCase() });
   if (!user) {
-    return res.status(404).json({ message: "No account found with this email" });
+    return res.json({ message: "If an account exists with this email, a password setup link has been dispatched." });
   }
 
   const setPasswordToken = crypto.randomBytes(32).toString("hex");
@@ -191,7 +254,7 @@ export const requestSetPassword = async (req, res) => {
   await sendSetPasswordEmail({ user, setPasswordToken });
 
   return res.json({
-    message: "Password setup email has been dispatched.",
+    message: "If an account exists with this email, a password setup link has been dispatched.",
   });
 };
 
@@ -202,11 +265,11 @@ export const resetPassword = async (req, res) => {
   const { token } = req.params;
   const { password } = req.body;
 
-  if (!token || !password) {
+  if (!token || typeof password !== "string" || !password) {
     return res.status(400).json({ message: "Token and new password are required" });
   }
-  if (password.length < 6) {
-    return res.status(400).json({ message: "Password must be at least 6 characters" });
+  if (password.length < 8) {
+    return res.status(400).json({ message: "Password must be at least 8 characters" });
   }
 
   const tokenHash = crypto.createHash("sha256").update(token).digest("hex");

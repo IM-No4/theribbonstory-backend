@@ -24,7 +24,7 @@ router.post("/:id/refund", protect, admin, asyncHandler(issueOrderRefund));
 
 // Public Tracking & Status Route
 router.get("/track/:identifier", asyncHandler(trackOrder));
-router.get("/:id/refund-status", asyncHandler(getOrderRefundStatus));
+router.get("/:id/refund-status", protect, asyncHandler(getOrderRefundStatus));
 
 // Customer Routes
 router.post("/", protect, asyncHandler(createOrder));

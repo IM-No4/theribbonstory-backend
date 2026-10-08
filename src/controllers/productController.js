@@ -1,6 +1,7 @@
 import Product from "../models/Product.js";
 import Category from "../models/Category.js";
 import { OCCASIONS } from "../utils/occasions.js";
+import { escapeRegex } from "../utils/security.js";
 
 const slugify = (s) =>
   s
@@ -24,12 +25,8 @@ export const getProducts = async (req, res) => {
     if (maxPrice) filter.price.$lte = Number(maxPrice);
   }
   if (search) {
-    filter.$or = [
-      { name: { $regex: search, $options: "i" } },
-      { description: { $regex: search, $options: "i" } },
-      { tagline: { $regex: search, $options: "i" } },
-      { tags: { $in: [new RegExp(search, "i")] } },
-    ];
+    const pattern = new RegExp(escapeRegex(String(search).slice(0, 100)), "i");
+    filter.$or = [{ name: pattern }, { description: pattern }, { tagline: pattern }, { tags: pattern }];
   }
 
   let query = Product.find(filter);
@@ -73,11 +70,8 @@ export const getAdminProducts = async (req, res) => {
   const filter = {};
   if (category && category !== "all") filter.category = category;
   if (search) {
-    filter.$or = [
-      { name: { $regex: search, $options: "i" } },
-      { slug: { $regex: search, $options: "i" } },
-      { description: { $regex: search, $options: "i" } },
-    ];
+    const pattern = new RegExp(escapeRegex(String(search).slice(0, 100)), "i");
+    filter.$or = [{ name: pattern }, { slug: pattern }, { description: pattern }];
   }
 
   let query = Product.find(filter);

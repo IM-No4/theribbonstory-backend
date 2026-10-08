@@ -10,6 +10,7 @@ import rateLimit from "express-rate-limit";
 import { connectDB } from "./config/db.js";
 import { seedProducts } from "./utils/seed.js";
 import { notFound, errorHandler } from "./middleware/errorHandler.js";
+import { getJwtSecret } from "./utils/security.js";
 
 import authRoutes from "./routes/authRoutes.js";
 import productRoutes from "./routes/productRoutes.js";
@@ -28,7 +29,12 @@ const __dirname = path.dirname(fileURLToPath(import.meta.url));
 dotenv.config({ path: path.join(__dirname, "..", ".env") });
 dotenv.config(); // fallback
 
+// Fail fast on missing secrets in production
+getJwtSecret();
+
 const app = express();
+// Behind the Nginx reverse proxy: use X-Forwarded-For for client IPs (rate limiting)
+app.set("trust proxy", 1);
 
 // 1. HTTP Security Headers with cross-origin asset support
 app.use(
@@ -64,15 +70,21 @@ const allowedOrigins = (process.env.CLIENT_URL || "")
   .map((s) => s.trim())
   .filter(Boolean)
   .concat([
-    "http://localhost:5173",
-    "http://127.0.0.1:5173",
-    "http://localhost:5178",
-    "http://127.0.0.1:5178",
-    "http://localhost:3000",
     "https://theribbonstory.com",
     "https://www.theribbonstory.com",
     "https://backend.theribbonstory.com",
-  ]);
+  ])
+  .concat(
+    process.env.NODE_ENV === "production"
+      ? []
+      : [
+          "http://localhost:5173",
+          "http://127.0.0.1:5173",
+          "http://localhost:5178",
+          "http://127.0.0.1:5178",
+          "http://localhost:3000",
+        ]
+  );
 
 app.use(
   cors({
@@ -81,7 +93,7 @@ app.use(
       if (!origin || allowedOrigins.includes(origin)) {
         return callback(null, true);
       }
-      return callback(null, true); // Permissive in deployment with credentials
+      return callback(null, false);
     },
     credentials: true,
     methods: ["GET", "POST", "PUT", "DELETE", "PATCH", "OPTIONS"],

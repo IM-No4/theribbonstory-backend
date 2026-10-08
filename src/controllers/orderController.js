@@ -2,6 +2,10 @@ import Order from "../models/Order.js";
 import Product from "../models/Product.js";
 import Category from "../models/Category.js";
 import Coupon from "../models/Coupon.js";
+import crypto from "crypto";
+import { computeOrderPricing } from "../services/pricingService.js";
+import { verifyRazorpayPaymentResult } from "./paymentController.js";
+import { findOrderByPublicIdentifier } from "../utils/orderLookup.js";
 import {
   sendOrderConfirmationEmail,
   sendRefundNotificationEmail,
@@ -17,7 +21,6 @@ export const createOrder = async (req, res) => {
     paymentMethod,
     paymentResult,
     couponCode,
-    discountPrice,
     giftOptions,
     scheduledDeliveryDate,
     deliverySlot,
@@ -29,58 +32,50 @@ export const createOrder = async (req, res) => {
   if (!shippingAddress?.line1 || !shippingAddress?.city || !shippingAddress?.postalCode) {
     return res.status(400).json({ message: "A complete shipping address is required" });
   }
+  if (!["razorpay", "cod"].includes(paymentMethod)) {
+    return res.status(400).json({ message: "Invalid payment method" });
+  }
 
-  const validObjectIds = items
-    .map((i) => i.productId)
-    .filter((id) => id && typeof id === "string" && id.match(/^[0-9a-fA-F]{24}$/));
-  const products = await Product.find({ _id: { $in: validObjectIds } });
-  const productMap = new Map(products.map((p) => [String(p._id), p]));
-  const fallbackProduct =
-    (await Product.findOne({
-      $or: [{ slug: "custom-3d-miniature-figurine" }, { isCustomizable: true }],
-    })) || (await Product.findOne());
+  // Authoritative server-side pricing (client prices/discounts/shipping are ignored)
+  const { orderItems, itemsPrice, shippingPrice, discountPrice, totalPrice, coupon } =
+    await computeOrderPricing({ items, couponCode, deliverySlot });
 
-  const orderItems = items.map((item) => {
-    const product = productMap.get(String(item.productId)) || fallbackProduct;
-    const itemPrice = Number(item.price) || product?.price || 999;
-    const optionsTotal = (item.selectedOptions || []).reduce((sum, o) => sum + (Number(o.priceDelta) || 0), 0);
-
-    return {
-      product: product?._id,
-      name: item.name || product?.name || "Custom 3D Keepsake",
-      image: item.image || item.customization?.photoUrl || product?.images?.[0],
-      price: itemPrice + optionsTotal,
-      quantity: Math.max(1, Number(item.quantity) || 1),
-      selectedOptions: item.selectedOptions || [],
-      customization: item.customization || {},
+  let verifiedPayment = null;
+  if (paymentMethod === "razorpay") {
+    const paymentId = paymentResult?.razorpayPaymentId;
+    if (typeof paymentId !== "string" || !paymentId) {
+      return res.status(400).json({ message: "Payment details are missing" });
+    }
+    const alreadyUsed = await Order.exists({ "paymentResult.razorpayPaymentId": paymentId });
+    if (alreadyUsed) {
+      return res.status(409).json({ message: "This payment has already been used for another order" });
+    }
+    await verifyRazorpayPaymentResult(paymentResult, totalPrice);
+    verifiedPayment = {
+      razorpayOrderId: String(paymentResult.razorpayOrderId),
+      razorpayPaymentId: paymentId,
+      razorpaySignature: String(paymentResult.razorpaySignature),
     };
-  });
-
-  const itemsPrice = orderItems.reduce((sum, i) => sum + i.price * i.quantity, 0);
-  const isMidnight = deliverySlot?.toLowerCase().includes("midnight");
-  let shippingPrice = req.body.shippingPrice !== undefined 
-    ? Number(req.body.shippingPrice) 
-    : (itemsPrice > 999 ? 0 : 79);
-  if (isNaN(shippingPrice) || shippingPrice < 0) {
-    shippingPrice = itemsPrice > 999 ? 0 : 79;
   }
-  if (isMidnight && req.body.shippingPrice === undefined) {
-    shippingPrice += 199;
-  }
-  const validDiscount = Math.max(0, Number(discountPrice) || 0);
-  const totalPrice = Math.max(0, itemsPrice + shippingPrice - validDiscount);
 
-  // If a valid coupon was used, increment usage counter
-  if (couponCode) {
-    await Coupon.findOneAndUpdate(
-      { code: couponCode.trim().toUpperCase() },
+  // Count coupon usage atomically, respecting the usage limit
+  if (coupon) {
+    const updated = await Coupon.findOneAndUpdate(
+      {
+        _id: coupon._id,
+        $or: [{ usageLimit: { $lte: 0 } }, { $expr: { $lt: ["$usedCount", "$usageLimit"] } }],
+      },
       { $inc: { usedCount: 1 } }
     );
+    if (!updated && paymentMethod === "cod") {
+      return res.status(400).json({ message: `Coupon "${coupon.code}" usage limit reached` });
+    }
   }
 
   // Generate estimated delivery date (3-5 days from now or scheduled date)
   const estimatedDelivery = scheduledDeliveryDate ? new Date(scheduledDeliveryDate) : new Date();
-  if (!scheduledDeliveryDate) {
+  if (!scheduledDeliveryDate || isNaN(estimatedDelivery)) {
+    estimatedDelivery.setTime(Date.now());
     estimatedDelivery.setDate(estimatedDelivery.getDate() + 4);
   }
 
@@ -90,20 +85,20 @@ export const createOrder = async (req, res) => {
     shippingAddress,
     itemsPrice,
     shippingPrice,
-    discountPrice: validDiscount,
-    couponCode: couponCode || "",
+    discountPrice,
+    couponCode: coupon?.code || "",
     totalPrice,
     paymentMethod,
-    paymentResult,
-    isPaid: paymentMethod === "razorpay" && !!paymentResult?.razorpayPaymentId,
-    paidAt: paymentMethod === "razorpay" && paymentResult?.razorpayPaymentId ? new Date() : undefined,
+    paymentResult: verifiedPayment || undefined,
+    isPaid: Boolean(verifiedPayment),
+    paidAt: verifiedPayment ? new Date() : undefined,
     status: "confirmed",
-    trackingNumber: `TRS-EXP-${Math.floor(100000 + Math.random() * 900000)}`,
-    courierPartner: req.body.courierPartner || "BlueDart Express (Shiprocket)",
+    trackingNumber: `TRS-EXP-${crypto.randomInt(100000, 1000000)}`,
+    courierPartner: typeof req.body.courierPartner === "string" ? req.body.courierPartner.slice(0, 100) : undefined,
     estimatedDelivery,
     giftOptions: giftOptions || { isGift: false },
-    scheduledDeliveryDate: scheduledDeliveryDate || "",
-    deliverySlot: deliverySlot || "Standard Delivery (3-5 Days)",
+    scheduledDeliveryDate: typeof scheduledDeliveryDate === "string" ? scheduledDeliveryDate : "",
+    deliverySlot: typeof deliverySlot === "string" ? deliverySlot : "Standard Delivery (3-5 Days)",
   });
 
   // Asynchronously dispatch luxury branded Order Confirmation email
@@ -133,27 +128,8 @@ export const getOrderById = async (req, res) => {
 // Public Order Tracking
 export const trackOrder = async (req, res) => {
   const { identifier } = req.params;
-  const { query } = req.query; // phone or email for verification if provided
 
-  let order = null;
-  // If exact 24-char ObjectId
-  if (identifier.match(/^[0-9a-fA-F]{24}$/)) {
-    order = await Order.findById(identifier).populate("user", "name email");
-  } else {
-    // Search by tracking number or last 6 characters
-    order = await Order.findOne({
-      $or: [
-        { trackingNumber: { $regex: identifier, $options: "i" } },
-        { _id: identifier },
-      ],
-    }).populate("user", "name email");
-  }
-
-  if (!order) {
-    // Attempt fallback searching by ID suffix
-    const allOrders = await Order.find().populate("user", "name email").sort({ createdAt: -1 }).limit(100);
-    order = allOrders.find((o) => o._id.toString().endsWith(identifier.toLowerCase()));
-  }
+  const order = await findOrderByPublicIdentifier(identifier);
 
   if (!order) {
     return res.status(404).json({ message: "No order found with the provided Order ID or Tracking Number" });
@@ -181,7 +157,7 @@ export const trackOrder = async (req, res) => {
       currentStep,
       statusSteps,
       createdAt: order.createdAt,
-      items: order.items,
+      items: (order.items || []).map((i) => ({ name: i.name, quantity: i.quantity, price: i.price })),
       itemsPrice: order.itemsPrice,
       shippingPrice: order.shippingPrice,
       discountPrice: order.discountPrice,
@@ -314,6 +290,9 @@ export const issueOrderRefund = async (req, res) => {
   }
 
   const refundAmt = Number(amount) > 0 ? Number(amount) : order.totalPrice;
+  if (refundAmt > order.totalPrice) {
+    return res.status(400).json({ message: `Refund cannot exceed the order total of ₹${order.totalPrice}` });
+  }
   const refundNotes = {
     orderId: order._id.toString(),
     customerEmail: order.user?.email || "customer@theribbonstory.com",
@@ -442,6 +421,9 @@ export const getOrderRefundStatus = async (req, res) => {
   const { id } = req.params;
   const order = await Order.findById(id);
   if (!order) return res.status(404).json({ message: "Order not found" });
+  if (String(order.user) !== String(req.user._id) && req.user.role !== "admin") {
+    return res.status(403).json({ message: "Not authorized to view this order" });
+  }
 
   return res.json({
     isRefunded: order.isRefunded,

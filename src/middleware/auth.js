@@ -1,5 +1,6 @@
 import jwt from "jsonwebtoken";
 import User from "../models/User.js";
+import { getJwtSecret } from "../utils/security.js";
 
 export const protect = async (req, res, next) => {
   try {
@@ -8,8 +9,7 @@ export const protect = async (req, res, next) => {
       return res.status(401).json({ message: "Not authorized, no token" });
     }
     const token = header.split(" ")[1];
-    const secret = process.env.JWT_SECRET || "theribbonstory-jwt-secret-key-2026-luxury-gifting";
-    const decoded = jwt.verify(token, secret);
+    const decoded = jwt.verify(token, getJwtSecret(), { algorithms: ["HS256"] });
     const user = await User.findById(decoded.id).select("-password");
     if (!user) return res.status(401).json({ message: "User no longer exists" });
     req.user = user;

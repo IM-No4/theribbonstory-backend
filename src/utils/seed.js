@@ -1,3 +1,4 @@
+import crypto from "crypto";
 import dotenv from "dotenv";
 import mongoose from "mongoose";
 import { pathToFileURL } from "url";
@@ -357,11 +358,24 @@ export const seedData = async ({ force = false } = {}) => {
   // 1. Seed Admin & Demo Customer User
   const adminEmail = (process.env.ADMIN_EMAIL || "admin@theribbonstory.com").toLowerCase();
   let adminUser = await User.findOne({ email: adminEmail });
-  if (!adminUser) {
+  const configuredPassword = process.env.ADMIN_PASSWORD;
+  const canCreateAdmin =
+    (configuredPassword && configuredPassword.length >= 12) || process.env.NODE_ENV !== "production";
+  if (!adminUser && !canCreateAdmin) {
+    console.warn(
+      "[Seed] No admin account created: set ADMIN_EMAIL and ADMIN_PASSWORD (12+ characters) to create one."
+    );
+  }
+  if (!adminUser && canCreateAdmin) {
+    // Never fall back to a well-known default password
+    const adminPassword =
+      configuredPassword && configuredPassword.length >= 12
+        ? configuredPassword
+        : crypto.randomBytes(12).toString("base64url");
     adminUser = await User.create({
       name: "Admin Manager",
       email: adminEmail,
-      password: process.env.ADMIN_PASSWORD || "admin123",
+      password: adminPassword,
       role: "admin",
       addresses: [
         {
@@ -375,7 +389,11 @@ export const seedData = async ({ force = false } = {}) => {
         },
       ],
     });
-    console.log(`Admin account created: ${adminEmail} (password: admin123)`);
+    console.log(
+      adminPassword === configuredPassword
+        ? `Admin account created: ${adminEmail} (password from ADMIN_PASSWORD)`
+        : `Development admin account created: ${adminEmail} (password: ${adminPassword})`
+    );
   }
 
   // 2. Seed Categories

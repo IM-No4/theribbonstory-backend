@@ -1,4 +1,6 @@
 import Order from "../models/Order.js";
+import { findOrderByPublicIdentifier } from "../utils/orderLookup.js";
+import { safeEqual } from "../utils/security.js";
 import {
   checkServiceability,
   createShiprocketOrder,
@@ -47,24 +49,7 @@ export const trackOrderShipment = async (req, res) => {
   }
 
   try {
-    let order = null;
-
-    if (cleanId.match(/^[0-9a-fA-F]{24}$/)) {
-      order = await Order.findById(cleanId).populate("user", "name email");
-    } else {
-      order = await Order.findOne({
-        $or: [
-          { trackingNumber: { $regex: cleanId, $options: "i" } },
-          { awbCode: { $regex: cleanId, $options: "i" } },
-          { shiprocketOrderId: cleanId },
-        ],
-      }).populate("user", "name email");
-    }
-
-    if (!order) {
-      const recentOrders = await Order.find().populate("user", "name email").sort({ createdAt: -1 }).limit(50);
-      order = recentOrders.find((o) => o._id.toString().endsWith(cleanId.toLowerCase()));
-    }
+    const order = await findOrderByPublicIdentifier(cleanId);
 
     // Call Shiprocket tracking
     const trackingQuery = order?.awbCode || order?.trackingNumber || cleanId;
@@ -102,10 +87,15 @@ export const trackOrderShipment = async (req, res) => {
             courierPartner: order.courierName || order.courierPartner || "BlueDart Express (Shiprocket)",
             trackingNumber: order.awbCode || order.trackingNumber,
             awbCode: order.awbCode,
-            shippingLabelUrl: order.shippingLabelUrl,
             estimatedDelivery: order.estimatedDelivery,
             deliverySlot: order.deliverySlot,
-            shippingAddress: order.shippingAddress,
+            // Public endpoint: never expose street address or phone number
+            shippingAddress: {
+              name: order.shippingAddress?.name,
+              city: order.shippingAddress?.city,
+              state: order.shippingAddress?.state,
+              postalCode: order.shippingAddress?.postalCode,
+            },
             totalPrice: order.totalPrice,
             items: (order.items || []).map((i) => ({
               name: i.name,
@@ -205,7 +195,17 @@ export const getShippingLabelPdf = async (req, res) => {
  * 5. Shiprocket Live Status Webhook Receiver (Public)
  */
 export const handleWebhook = async (req, res) => {
-  const { awb, current_status, order_id, courier_name, scans } = req.body;
+  // Shiprocket sends the token configured in its webhook settings as the x-api-key header
+  const expectedToken = process.env.SHIPROCKET_WEBHOOK_TOKEN;
+  if (!expectedToken) {
+    console.error("[Webhook] SHIPROCKET_WEBHOOK_TOKEN is not set — rejecting webhook");
+    return res.status(503).json({ message: "Webhook not configured" });
+  }
+  if (!safeEqual(req.headers["x-api-key"], expectedToken)) {
+    return res.status(401).json({ message: "Unauthorized" });
+  }
+
+  const { awb, current_status, order_id, courier_name } = req.body;
 
   try {
     const cleanAwb = String(awb || "").trim();
@@ -213,13 +213,14 @@ export const handleWebhook = async (req, res) => {
       return res.status(400).json({ message: "Invalid webhook payload" });
     }
 
-    const order = await Order.findOne({
-      $or: [{ awbCode: cleanAwb }, { trackingNumber: cleanAwb }, { shiprocketOrderId: String(order_id) }],
-    }).populate("user", "name email");
+    const lookup = [];
+    if (cleanAwb) lookup.push({ awbCode: cleanAwb }, { trackingNumber: cleanAwb });
+    if (order_id) lookup.push({ shiprocketOrderId: String(order_id) });
+    const order = await Order.findOne({ $or: lookup }).populate("user", "name email");
 
     if (order) {
       const prevStatus = order.status;
-      const statusUpper = (current_status || "").toUpperCase();
+      const statusUpper = String(current_status || "").toUpperCase();
 
       if (statusUpper.includes("DELIVERED")) {
         order.status = "delivered";

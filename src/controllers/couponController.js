@@ -1,40 +1,19 @@
 import Coupon from "../models/Coupon.js";
+import { calculateCouponDiscount } from "../services/pricingService.js";
 
 export const applyCoupon = async (req, res) => {
   const { code, subtotal } = req.body;
   if (!code) return res.status(400).json({ message: "Coupon code is required" });
 
-  const cleanCode = code.trim().toUpperCase();
+  const cleanCode = String(code).trim().toUpperCase();
   const coupon = await Coupon.findOne({ code: cleanCode, isActive: true });
 
   if (!coupon) {
     return res.status(404).json({ message: `Coupon "${cleanCode}" is invalid or expired` });
   }
 
-  if (coupon.validUntil && new Date(coupon.validUntil) < new Date()) {
-    return res.status(400).json({ message: `Coupon "${cleanCode}" has expired` });
-  }
-
-  if (coupon.usageLimit > 0 && coupon.usedCount >= coupon.usageLimit) {
-    return res.status(400).json({ message: `Coupon "${cleanCode}" usage limit reached` });
-  }
-
-  const orderAmount = Number(subtotal) || 0;
-  if (coupon.minOrderAmount && orderAmount < coupon.minOrderAmount) {
-    return res.status(400).json({
-      message: `Minimum order value of ₹${coupon.minOrderAmount} required for coupon ${cleanCode}`,
-    });
-  }
-
-  let discount = 0;
-  if (coupon.discountType === "percentage") {
-    discount = Math.round((orderAmount * coupon.discountAmount) / 100);
-    if (coupon.maxDiscount > 0 && discount > coupon.maxDiscount) {
-      discount = coupon.maxDiscount;
-    }
-  } else {
-    discount = Math.min(orderAmount, coupon.discountAmount);
-  }
+  const { discount, error } = calculateCouponDiscount(coupon, Number(subtotal) || 0);
+  if (error) return res.status(400).json({ message: error });
 
   return res.json({
     valid: true,

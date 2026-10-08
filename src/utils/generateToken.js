@@ -1,8 +1,9 @@
 import jwt from "jsonwebtoken";
+import { getJwtSecret } from "./security.js";
 
 export const generateToken = (userId) => {
-  const secret = process.env.JWT_SECRET || "theribbonstory-jwt-secret-key-2026-luxury-gifting";
-  return jwt.sign({ id: userId }, secret, {
+  return jwt.sign({ id: userId }, getJwtSecret(), {
+    algorithm: "HS256",
     expiresIn: process.env.JWT_EXPIRES_IN || "7d",
   });
 };

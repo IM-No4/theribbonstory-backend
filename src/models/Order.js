@@ -97,5 +97,10 @@ const orderSchema = new mongoose.Schema(
 orderSchema.index({ user: 1, createdAt: -1 });
 orderSchema.index({ status: 1, createdAt: -1 });
 orderSchema.index({ "shippingAddress.phone": 1 });
+// A Razorpay payment can only ever pay for one order
+orderSchema.index(
+  { "paymentResult.razorpayPaymentId": 1 },
+  { unique: true, partialFilterExpression: { "paymentResult.razorpayPaymentId": { $type: "string" } } }
+);
 
 export default mongoose.model("Order", orderSchema);
