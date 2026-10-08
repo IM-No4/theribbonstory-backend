@@ -105,6 +105,11 @@ const orderSchema = new mongoose.Schema(
     // Stock bookkeeping so cancellations give stock back exactly once
     stockDeducted: { type: Boolean, default: false },
     stockRestored: { type: Boolean, default: false },
+    // When the customer was emailed about shipping / delivery (sent once each)
+    notifications: {
+      shippedAt: Date,
+      deliveredAt: Date,
+    },
     scheduledDeliveryDate: { type: String, default: "" },
     deliverySlot: { type: String, default: "Standard Delivery (3-5 Days)" },
   },

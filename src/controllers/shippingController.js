@@ -8,11 +8,7 @@ import {
   generateShippingLabel,
   trackShipment as trackShiprocketShipment,
 } from "../services/shiprocketService.js";
-import {
-  sendOrderShippedEmail,
-  sendOrderDeliveredEmail,
-  sendReviewRequestEmail,
-} from "../services/emailService.js";
+import { notifyStatusChange } from "../services/orderNotifications.js";
 
 /**
  * 1. Check Pincode Delivery Serviceability (Public)
@@ -122,6 +118,7 @@ export const createShipment = async (req, res) => {
   try {
     const order = await Order.findById(orderId).populate("user", "name email");
     if (!order) return res.status(404).json({ message: "Order not found" });
+    const previousStatus = order.status;
 
     // Step 1: Create Order in Shiprocket
     const srOrderResult = await createShiprocketOrder(order);
@@ -145,12 +142,7 @@ export const createShipment = async (req, res) => {
 
     await order.save();
 
-    // Dispatch Order Shipped Email
-    sendOrderShippedEmail({
-      order,
-      userEmail: order.user?.email || order.shippingAddress?.email,
-      userName: order.user?.name || order.shippingAddress?.name,
-    }).catch((err) => console.error("[ShippingController] Error sending shipped email:", err));
+    notifyStatusChange(order, previousStatus);
 
     return res.json({
       success: true,
@@ -221,14 +213,18 @@ export const handleWebhook = async (req, res) => {
     if (order) {
       const prevStatus = order.status;
       const statusUpper = String(current_status || "").toUpperCase();
+      // Courier events can arrive late or out of order: never move a
+      // delivered or cancelled order back to "shipped"
+      const settled = ["delivered", "cancelled"].includes(order.status);
 
-      if (statusUpper.includes("DELIVERED")) {
+      // Exact match: "UNDELIVERED" and "RTO DELIVERED" (returned to us) are not deliveries
+      if (!settled && statusUpper === "DELIVERED") {
         order.status = "delivered";
         order.shipmentStatus = "DELIVERED";
-      } else if (statusUpper.includes("OUT FOR DELIVERY")) {
+      } else if (!settled && statusUpper.includes("OUT FOR DELIVERY")) {
         order.status = "shipped";
         order.shipmentStatus = "OUT_FOR_DELIVERY";
-      } else if (statusUpper.includes("IN TRANSIT") || statusUpper.includes("PICKED UP")) {
+      } else if (!settled && !statusUpper.startsWith("RTO") && (statusUpper.includes("IN TRANSIT") || statusUpper.includes("PICKED UP"))) {
         order.status = "shipped";
         order.shipmentStatus = "IN_TRANSIT";
       }
@@ -237,20 +233,7 @@ export const handleWebhook = async (req, res) => {
       await order.save();
       console.log(`Updated Order ${order._id} status to ${order.status} via Shiprocket webhook`);
 
-      // Trigger Delivered & Review emails if transitioned to delivered
-      if (order.status === "delivered" && prevStatus !== "delivered") {
-        sendOrderDeliveredEmail({
-          order,
-          userEmail: order.user?.email || order.shippingAddress?.email,
-          userName: order.user?.name || order.shippingAddress?.name,
-        }).catch((e) => console.error("[Webhook] Error sending delivered email:", e));
-
-        sendReviewRequestEmail({
-          order,
-          userEmail: order.user?.email || order.shippingAddress?.email,
-          userName: order.user?.name || order.shippingAddress?.name,
-        }).catch((e) => console.error("[Webhook] Error sending review email:", e));
-      }
+      notifyStatusChange(order, prevStatus);
     }
 
     return res.json({ success: true, received: true });
