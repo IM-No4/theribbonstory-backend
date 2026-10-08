@@ -24,11 +24,17 @@ const userSchema = new mongoose.Schema(
     addresses: [addressSchema],
     resetPasswordToken: { type: String, select: false },
     resetPasswordExpires: { type: Date, select: false },
+    // Embedded in login tokens; bumping it signs the account out on every device
+    tokenVersion: { type: Number, default: 0 },
   },
   { timestamps: true }
 );
 
 userSchema.pre("save", async function (next) {
+  // Changing the password or email invalidates all existing sessions
+  if (!this.isNew && (this.isModified("password") || this.isModified("email"))) {
+    this.tokenVersion = (this.tokenVersion || 0) + 1;
+  }
   if (!this.isModified("password")) return next();
   this.password = await bcrypt.hash(this.password, 10);
   next();

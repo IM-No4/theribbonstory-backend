@@ -18,8 +18,8 @@ const parseDurationMs = (value) => {
 };
 
 /** Issue a session: signed JWT in an httpOnly cookie (never in the response body) */
-export const setAuthCookie = (res, userId) => {
-  res.cookie(AUTH_COOKIE, generateToken(userId), {
+export const setAuthCookie = (res, user) => {
+  res.cookie(AUTH_COOKIE, generateToken(user), {
     ...cookieOptions(),
     maxAge: parseDurationMs(process.env.JWT_EXPIRES_IN || "7d"),
   });
