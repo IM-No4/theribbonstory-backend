@@ -17,6 +17,7 @@ import { findOrderByPublicIdentifier } from "../utils/orderLookup.js";
 import { sendRefundNotificationEmail } from "../services/emailService.js";
 import { notifyStatusChange } from "../services/orderNotifications.js";
 import { salesReport } from "../services/salesReport.js";
+import { exportOrdersCsv } from "../services/ordersExport.js";
 import { assignInvoiceNumber, issueInvoice, renderInvoicePdf } from "../services/invoiceService.js";
 
 /**
@@ -260,6 +261,21 @@ export const updateOrderStatus = async (req, res) => {
   notifyStatusChange(order, oldStatus);
 
   return res.json({ order, message: `Order status updated to ${order.status}` });
+};
+
+/** Admin: orders as CSV, ?from=YYYY-MM-DD&to=YYYY-MM-DD&status=all|<status> (IST dates) */
+export const exportOrders = async (req, res) => {
+  const { from, to, status } = req.query;
+  const { csv, count, truncated } = await exportOrdersCsv({ from, to, status });
+  const name = `orders-${from || "start"}-to-${to || "today"}${status && status !== "all" ? `-${status}` : ""}.csv`.replace(/[^\w.-]/g, "");
+  res.set({
+    "Content-Type": "text/csv; charset=utf-8",
+    "Content-Disposition": `attachment; filename="${name}"`,
+    "Cache-Control": "private, no-store",
+    "X-Order-Count": String(count),
+    ...(truncated ? { "X-Export-Truncated": "true" } : {}),
+  });
+  res.send(csv);
 };
 
 /** Admin sales dashboard: ?range=today|7d|30d */
