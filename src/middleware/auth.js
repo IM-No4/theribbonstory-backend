@@ -39,6 +39,10 @@ export const protect = async (req, res, next) => {
     const decoded = jwt.verify(token, getJwtSecret(), { algorithms: ["HS256"] });
     const user = await User.findById(decoded.id).select("-password");
     if (!user) return res.status(401).json({ message: "User no longer exists" });
+    // Signed out everywhere (password/email changed since this token was issued)
+    if ((decoded.v || 0) !== (user.tokenVersion || 0)) {
+      return res.status(401).json({ message: "Session expired, please log in again" });
+    }
     req.user = user;
     next();
   } catch (err) {

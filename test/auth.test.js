@@ -1,9 +1,12 @@
 import { describe, it, before, after, beforeEach, afterEach } from "node:test";
 import assert from "node:assert/strict";
+import jwt from "jsonwebtoken";
+import mongoose from "mongoose";
 import { mock, query, startServer, fakeUser, authAs } from "./helpers.js";
 import User from "../src/models/User.js";
 import { AUTH_COOKIE } from "../src/utils/authCookie.js";
 import { generateToken } from "../src/utils/generateToken.js";
+import { getJwtSecret } from "../src/utils/security.js";
 
 let server;
 before(async () => {
@@ -69,7 +72,7 @@ describe("Login sessions", () => {
     const user = fakeUser();
     authAs(User, user);
     const res = await fetch(`${server.url}/api/auth/me`, {
-      headers: { Cookie: `${AUTH_COOKIE}=${generateToken(user._id)}` },
+      headers: { Cookie: `${AUTH_COOKIE}=${generateToken(user)}` },
     });
     assert.equal(res.status, 200);
     assert.equal((await res.json()).user.email, user.email);
@@ -84,7 +87,7 @@ describe("Login sessions", () => {
   it("rejects a tampered token", async () => {
     const user = fakeUser();
     authAs(User, user);
-    const token = generateToken(user._id);
+    const token = generateToken(user);
     const tampered = token.slice(0, -2) + (token.endsWith("aa") ? "bb" : "aa");
     const res = await fetch(`${server.url}/api/auth/me`, { headers: { Cookie: `${AUTH_COOKIE}=${tampered}` } });
     assert.equal(res.status, 401);
@@ -108,7 +111,7 @@ describe("Cross-site request protection for cookie sessions", () => {
       method: "POST",
       headers: {
         "Content-Type": "application/json",
-        Cookie: `${AUTH_COOKIE}=${generateToken(user._id)}`,
+        Cookie: `${AUTH_COOKIE}=${generateToken(user)}`,
         ...(origin ? { Origin: origin } : {}),
       },
       body: JSON.stringify({ line1: "1 Road", city: "Pune", postalCode: "411001" }),
@@ -196,5 +199,93 @@ describe("Account changes", () => {
   it("registration enforces the minimum password length", async () => {
     const res = await post("/api/auth/register", { name: "A", email: "a@example.com", password: "short" });
     assert.equal(res.status, 400);
+  });
+});
+
+describe("Sign out everywhere", () => {
+  const runPreSave = (doc) =>
+    new Promise((resolve, reject) =>
+      User.schema.s.hooks.execPre("save", doc, [], (err) => (err ? reject(err) : resolve()))
+    );
+  const loadedUser = () =>
+    User.hydrate({ _id: new mongoose.Types.ObjectId(), name: "A", email: "a@example.com", password: "$2a$10$hash", tokenVersion: 3 });
+
+  it("bumps the session version when the password or email changes", async () => {
+    let doc = loadedUser();
+    doc.password = "new-password-123";
+    await runPreSave(doc);
+    assert.equal(doc.tokenVersion, 4);
+
+    doc = loadedUser();
+    doc.email = "new@example.com";
+    await runPreSave(doc);
+    assert.equal(doc.tokenVersion, 4);
+  });
+
+  it("keeps the session version for other profile changes and new accounts", async () => {
+    const doc = loadedUser();
+    doc.name = "New Name";
+    doc.addresses.push({ line1: "1 Road", city: "Pune" });
+    await runPreSave(doc);
+    assert.equal(doc.tokenVersion, 3);
+
+    const created = new User({ name: "N", email: "n@example.com", password: "password-123" });
+    await runPreSave(created);
+    assert.equal(created.tokenVersion, 0);
+  });
+
+  it("rejects sessions issued before the latest credential change", async () => {
+    const user = fakeUser({ tokenVersion: 0 });
+    const oldToken = authAs(User, user);
+    user.tokenVersion = 1; // password changed on another device
+    const res = await fetch(`${server.url}/api/auth/me`, { headers: { Authorization: `Bearer ${oldToken}` } });
+    assert.equal(res.status, 401);
+  });
+
+  it("still accepts tokens issued before versioning existed", async () => {
+    const user = fakeUser();
+    authAs(User, user);
+    const legacy = jwt.sign({ id: String(user._id) }, getJwtSecret(), { algorithm: "HS256", expiresIn: "1h" });
+    const res = await fetch(`${server.url}/api/auth/me`, { headers: { Authorization: `Bearer ${legacy}` } });
+    assert.equal(res.status, 200);
+  });
+
+  it("keeps the device that changed the password signed in", async () => {
+    const user = userWithPassword({
+      tokenVersion: 2,
+      // Simulates the pre-save hook bumping the version on a password change
+      save: async function () {
+        this.tokenVersion += 1;
+      },
+    });
+    const token = authAs(User, user);
+    const res = await fetch(`${server.url}/api/auth/profile`, {
+      method: "PUT",
+      headers: { "Content-Type": "application/json", Authorization: `Bearer ${token}` },
+      body: JSON.stringify({ password: "new-password-123", currentPassword: "correct-password" }),
+    });
+    assert.equal(res.status, 200);
+    const cookie = sessionCookie(res);
+    assert.ok(cookie, "fresh session cookie issued");
+    const fresh = decodeURIComponent(cookie.split(";")[0].split("=")[1]);
+    assert.equal(jwt.decode(fresh).v, 3);
+
+    // The new cookie works; the old token no longer does
+    const ok = await fetch(`${server.url}/api/auth/me`, { headers: { Cookie: `${AUTH_COOKIE}=${fresh}` } });
+    assert.equal(ok.status, 200);
+    const stale = await fetch(`${server.url}/api/auth/me`, { headers: { Authorization: `Bearer ${token}` } });
+    assert.equal(stale.status, 401);
+  });
+
+  it("does not issue a new session for name-only changes", async () => {
+    const user = userWithPassword();
+    const token = authAs(User, user);
+    const res = await fetch(`${server.url}/api/auth/profile`, {
+      method: "PUT",
+      headers: { "Content-Type": "application/json", Authorization: `Bearer ${token}` },
+      body: JSON.stringify({ name: "Renamed" }),
+    });
+    assert.equal(res.status, 200);
+    assert.equal(sessionCookie(res), undefined);
   });
 });

@@ -1,0 +1,31 @@
+name: CI
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  test:
+    name: Tests
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci
+      - name: Check every module loads
+        run: |
+          for f in $(git ls-files 'src/*.js'); do node --check "$f"; done
+          node --input-type=module -e 'process.env.NODE_ENV="test"; await import("./src/app.js"); console.log("app imports OK"); process.exit(0)'
+      - run: npm test

@@ -63,5 +63,5 @@ export const fakeUser = (overrides = {}) => ({
 /** Stub User.findById so the `protect` middleware resolves this user, and return its bearer token */
 export const authAs = (User, user) => {
   mock.method(User, "findById", (id) => query(String(id) === String(user._id) ? user : null));
-  return generateToken(user._id);
+  return generateToken(user);
 };

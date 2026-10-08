@@ -27,7 +27,7 @@ export const register = async (req, res) => {
     console.error("[AuthController] Error sending welcome email:", err)
   );
 
-  setAuthCookie(res, user._id);
+  setAuthCookie(res, user);
   return res.status(201).json({
     user: user.toSafeObject(),
   });
@@ -43,7 +43,7 @@ export const login = async (req, res) => {
   if (!user || !(await user.comparePassword(password))) {
     return res.status(401).json({ message: "Invalid email or password" });
   }
-  setAuthCookie(res, user._id);
+  setAuthCookie(res, user);
   return res.json({
     user: user.toSafeObject(),
   });
@@ -134,7 +134,7 @@ export const googleAuth = async (req, res) => {
     await user.save();
   }
 
-  setAuthCookie(res, user._id);
+  setAuthCookie(res, user);
   return res.status(isNewUser ? 201 : 200).json({
     user: user.toSafeObject(),
     isNewUser,
@@ -184,6 +184,8 @@ export const updateProfile = async (req, res) => {
   if (changingPassword) user.password = password;
 
   await user.save();
+  // Credential changes sign out every other device; re-issue this device's session
+  if (changingEmail || changingPassword) setAuthCookie(res, user);
   return res.json({ user: user.toSafeObject(), message: "Profile updated successfully" });
 };
 
@@ -297,7 +299,7 @@ export const resetPassword = async (req, res) => {
   // Send confirmation security notice
   await sendPasswordChangedConfirmationEmail({ user });
 
-  setAuthCookie(res, user._id);
+  setAuthCookie(res, user);
   return res.json({
     success: true,
     message: "Password has been updated successfully! You can now log in.",
