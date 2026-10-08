@@ -140,6 +140,7 @@ export const computeOrderPricing = async ({ items, couponCode, deliverySlot }) =
 
     return {
       product: linkedProduct._id,
+      fromCatalog: Boolean(product),
       name: String(item.name || product?.name || "Custom 3D Keepsake").slice(0, 200),
       image: item.image || item.customization?.photoUrl || linkedProduct.images?.[0],
       price: unitPrice,
@@ -148,6 +149,24 @@ export const computeOrderPricing = async ({ items, couponCode, deliverySlot }) =
       customization: item.customization || {},
     };
   });
+
+  // Stock check for catalog products (placeholder-linked hampers carry no stock)
+  const wanted = new Map();
+  for (const item of orderItems) {
+    if (!item.fromCatalog) continue;
+    const id = String(item.product);
+    wanted.set(id, (wanted.get(id) || 0) + item.quantity);
+  }
+  for (const [id, quantity] of wanted) {
+    const product = productMap.get(id);
+    if (product && typeof product.stock === "number" && product.stock < quantity) {
+      throw new PricingError(
+        product.stock > 0
+          ? `Sorry, only ${product.stock} of "${product.name}" left in stock`
+          : `Sorry, "${product.name}" is out of stock`
+      );
+    }
+  }
 
   const itemsPrice = orderItems.reduce((sum, i) => sum + i.price * i.quantity, 0);
 

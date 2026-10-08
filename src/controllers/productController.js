@@ -1,7 +1,8 @@
 import Product from "../models/Product.js";
 import Category from "../models/Category.js";
 import { OCCASIONS } from "../utils/occasions.js";
-import { escapeRegex } from "../utils/security.js";
+import { escapeRegex, isObjectId } from "../utils/security.js";
+import { deletePrintFile, printFilePath } from "../middleware/printFileUpload.js";
 
 const slugify = (s) =>
   s
@@ -74,7 +75,8 @@ export const getAdminProducts = async (req, res) => {
     filter.$or = [{ name: pattern }, { slug: pattern }, { description: pattern }];
   }
 
-  let query = Product.find(filter);
+  // Admins see whether a print file is attached (never sent to customers)
+  let query = Product.find(filter).select("+printFile");
   if (sort === "price-asc") query = query.sort({ price: 1 });
   else if (sort === "price-desc") query = query.sort({ price: -1 });
   else if (sort === "stock-asc") query = query.sort({ stock: 1 });
@@ -124,7 +126,7 @@ export const createProduct = async (req, res) => {
     description: description || "",
     price: Number(price),
     compareAtPrice: compareAtPrice ? Number(compareAtPrice) : undefined,
-    images: Array.isArray(images) && images.length > 0 ? images : ["/src/assets/images/photo-magnet.jpeg"],
+    images: Array.isArray(images) && images.length > 0 ? images : ["/images/photo-magnet.webp"],
     accentColor: accentColor || "#a83f52",
     isCustomizable: Boolean(isCustomizable),
     customizationPrompt: customizationPrompt || "Upload your favourite photo",
@@ -202,7 +204,66 @@ export const updateProduct = async (req, res) => {
 
 export const deleteProduct = async (req, res) => {
   const { id } = req.params;
-  const product = await Product.findByIdAndDelete(id);
+  const product = await Product.findByIdAndDelete(id).select("+printFile");
   if (!product) return res.status(404).json({ message: "Product not found" });
+  if (product.printFile?.filename) deletePrintFile(product.printFile.filename);
   return res.json({ message: `Product "${product.name}" deleted successfully` });
+};
+
+/**
+ * Admin: attach or replace a product's production print file (STL/3MF/OBJ)
+ */
+export const uploadProductPrintFile = async (req, res) => {
+  if (!req.file) return res.status(400).json({ message: "Please choose a print file to upload" });
+  const discardUpload = () => deletePrintFile(req.file.filename);
+
+  if (!isObjectId(req.params.id)) {
+    discardUpload();
+    return res.status(400).json({ message: "Invalid product" });
+  }
+  const product = await Product.findById(req.params.id).select("+printFile");
+  if (!product) {
+    discardUpload();
+    return res.status(404).json({ message: "Product not found" });
+  }
+
+  const previous = product.printFile?.filename;
+  product.printFile = {
+    filename: req.file.filename,
+    originalName: req.file.originalname.slice(0, 200),
+    size: req.file.size,
+    uploadedAt: new Date(),
+  };
+  await product.save();
+  if (previous && previous !== req.file.filename) deletePrintFile(previous);
+
+  return res.status(201).json({ printFile: product.printFile, message: "Print file attached" });
+};
+
+/**
+ * Admin: download a product's print file
+ */
+export const downloadProductPrintFile = async (req, res) => {
+  if (!isObjectId(req.params.id)) return res.status(400).json({ message: "Invalid product" });
+  const product = await Product.findById(req.params.id).select("+printFile");
+  const file = product?.printFile?.filename && printFilePath(product.printFile.filename);
+  if (!file) return res.status(404).json({ message: "No print file attached to this product" });
+
+  res.set("Cache-Control", "private, no-store");
+  return res.download(file, product.printFile.originalName || product.printFile.filename, (err) => {
+    if (err && !res.headersSent) res.status(404).json({ message: "Print file is missing on the server" });
+  });
+};
+
+/**
+ * Admin: remove a product's print file
+ */
+export const deleteProductPrintFile = async (req, res) => {
+  if (!isObjectId(req.params.id)) return res.status(400).json({ message: "Invalid product" });
+  const product = await Product.findById(req.params.id).select("+printFile");
+  if (!product) return res.status(404).json({ message: "Product not found" });
+  if (product.printFile?.filename) deletePrintFile(product.printFile.filename);
+  product.printFile = undefined;
+  await product.save();
+  return res.json({ message: "Print file removed" });
 };

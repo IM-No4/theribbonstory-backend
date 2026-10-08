@@ -1,118 +1,98 @@
 import Order from "../models/Order.js";
 import Product from "../models/Product.js";
 import Category from "../models/Category.js";
-import Coupon from "../models/Coupon.js";
-import crypto from "crypto";
-import { computeOrderPricing } from "../services/pricingService.js";
 import { verifyRazorpayPaymentResult } from "./paymentController.js";
+import {
+  buildOrderFields,
+  reserveStock,
+  restoreStock,
+  consumeCoupon,
+  sendConfirmation,
+  markOrderPaid,
+} from "../services/orderService.js";
+import { isObjectId } from "../utils/security.js";
 import { findOrderByPublicIdentifier } from "../utils/orderLookup.js";
 import {
-  sendOrderConfirmationEmail,
   sendRefundNotificationEmail,
   sendOrderShippedEmail,
   sendOrderDeliveredEmail,
   sendReviewRequestEmail,
 } from "../services/emailService.js";
 
+/**
+ * Cash-on-delivery orders. Online (Razorpay) orders are created by
+ * POST /payments/razorpay/order and confirmed via confirmOrderPayment or
+ * the Razorpay webhook.
+ */
 export const createOrder = async (req, res) => {
-  const {
-    items,
-    shippingAddress,
-    paymentMethod,
-    paymentResult,
-    couponCode,
-    giftOptions,
-    scheduledDeliveryDate,
-    deliverySlot,
-  } = req.body;
-
-  if (!Array.isArray(items) || items.length === 0) {
-    return res.status(400).json({ message: "Your cart is empty" });
-  }
-  if (!shippingAddress?.line1 || !shippingAddress?.city || !shippingAddress?.postalCode) {
-    return res.status(400).json({ message: "A complete shipping address is required" });
-  }
-  if (!["razorpay", "cod"].includes(paymentMethod)) {
-    return res.status(400).json({ message: "Invalid payment method" });
+  if (req.body.paymentMethod !== "cod") {
+    return res.status(400).json({
+      message: "Online payments start at /payments/razorpay/order. Please refresh the page and try again.",
+    });
   }
 
-  // Authoritative server-side pricing (client prices/discounts/shipping are ignored)
-  const { orderItems, itemsPrice, shippingPrice, discountPrice, totalPrice, coupon } =
-    await computeOrderPricing({ items, couponCode, deliverySlot });
+  const { fields, coupon } = await buildOrderFields(req.body, req.user);
 
-  let verifiedPayment = null;
-  if (paymentMethod === "razorpay") {
-    const paymentId = paymentResult?.razorpayPaymentId;
-    if (typeof paymentId !== "string" || !paymentId) {
-      return res.status(400).json({ message: "Payment details are missing" });
-    }
-    const alreadyUsed = await Order.exists({ "paymentResult.razorpayPaymentId": paymentId });
-    if (alreadyUsed) {
-      return res.status(409).json({ message: "This payment has already been used for another order" });
-    }
-    await verifyRazorpayPaymentResult(paymentResult, totalPrice);
-    verifiedPayment = {
-      razorpayOrderId: String(paymentResult.razorpayOrderId),
-      razorpayPaymentId: paymentId,
-      razorpaySignature: String(paymentResult.razorpaySignature),
-    };
-  }
-
-  // Count coupon usage atomically, respecting the usage limit
-  if (coupon) {
-    const updated = await Coupon.findOneAndUpdate(
-      {
-        _id: coupon._id,
-        $or: [{ usageLimit: { $lte: 0 } }, { $expr: { $lt: ["$usedCount", "$usageLimit"] } }],
-      },
-      { $inc: { usedCount: 1 } }
-    );
-    if (!updated && paymentMethod === "cod") {
+  await reserveStock(fields.items);
+  let order;
+  try {
+    if (coupon && !(await consumeCoupon(coupon._id))) {
       return res.status(400).json({ message: `Coupon "${coupon.code}" usage limit reached` });
     }
+    order = await Order.create({
+      ...fields,
+      paymentMethod: "cod",
+      isPaid: false,
+      status: "confirmed",
+      stockDeducted: true,
+    });
+  } finally {
+    // Give stock back if the order was not created
+    if (!order) {
+      await Promise.all(
+        fields.items
+          .filter((i) => i.fromCatalog)
+          .map((i) => Product.updateOne({ _id: i.product }, { $inc: { stock: i.quantity } }))
+      );
+    }
   }
 
-  // Generate estimated delivery date (3-5 days from now or scheduled date)
-  const estimatedDelivery = scheduledDeliveryDate ? new Date(scheduledDeliveryDate) : new Date();
-  if (!scheduledDeliveryDate || isNaN(estimatedDelivery)) {
-    estimatedDelivery.setTime(Date.now());
-    estimatedDelivery.setDate(estimatedDelivery.getDate() + 4);
-  }
-
-  const order = await Order.create({
-    user: req.user._id,
-    items: orderItems,
-    shippingAddress,
-    itemsPrice,
-    shippingPrice,
-    discountPrice,
-    couponCode: coupon?.code || "",
-    totalPrice,
-    paymentMethod,
-    paymentResult: verifiedPayment || undefined,
-    isPaid: Boolean(verifiedPayment),
-    paidAt: verifiedPayment ? new Date() : undefined,
-    status: "confirmed",
-    trackingNumber: `TRS-EXP-${crypto.randomInt(100000, 1000000)}`,
-    courierPartner: typeof req.body.courierPartner === "string" ? req.body.courierPartner.slice(0, 100) : undefined,
-    estimatedDelivery,
-    giftOptions: giftOptions || { isGift: false },
-    scheduledDeliveryDate: typeof scheduledDeliveryDate === "string" ? scheduledDeliveryDate : "",
-    deliverySlot: typeof deliverySlot === "string" ? deliverySlot : "Standard Delivery (3-5 Days)",
-  });
-
-  // Asynchronously dispatch luxury branded Order Confirmation email
-  sendOrderConfirmationEmail({
-    order,
-    userEmail: req.user?.email || shippingAddress?.email,
-    userName: req.user?.name || shippingAddress?.name,
-  }).catch((err) => console.error("[OrderController] Failed to dispatch order email:", err));
-
+  sendConfirmation(order, req.user);
   return res.status(201).json({ order });
 };
 
+/**
+ * Browser-side confirmation after Razorpay checkout. The webhook confirms
+ * the same order independently, so a closed tab never loses a paid order.
+ */
+export const confirmOrderPayment = async (req, res) => {
+  const { razorpay_order_id, razorpay_payment_id, razorpay_signature } = req.body;
+  if (!isObjectId(req.params.id)) return res.status(400).json({ message: "Invalid order" });
+
+  const order = await Order.findById(req.params.id);
+  if (!order || String(order.user) !== String(req.user._id)) {
+    return res.status(404).json({ message: "Order not found" });
+  }
+  if (order.paymentMethod !== "razorpay" || order.paymentResult?.razorpayOrderId !== razorpay_order_id) {
+    return res.status(400).json({ message: "Payment does not belong to this order" });
+  }
+  if (order.isPaid) return res.json({ order });
+
+  const payment = await verifyRazorpayPaymentResult(
+    { razorpayOrderId: razorpay_order_id, razorpayPaymentId: razorpay_payment_id, razorpaySignature: razorpay_signature },
+    order.totalPrice
+  );
+  const result = await markOrderPaid({
+    razorpayOrderId: razorpay_order_id,
+    razorpayPaymentId: razorpay_payment_id,
+    razorpaySignature: razorpay_signature,
+    amountPaise: payment.amount,
+  });
+  return res.json({ order: result.order });
+};
+
 export const getMyOrders = async (req, res) => {
-  const orders = await Order.find({ user: req.user._id }).sort({ createdAt: -1 });
+  const orders = await Order.find({ user: req.user._id, awaitingPayment: { $ne: true } }).sort({ createdAt: -1 });
   return res.json({ orders });
 };
 
@@ -121,6 +101,10 @@ export const getOrderById = async (req, res) => {
   if (!order) return res.status(404).json({ message: "Order not found" });
   if (String(order.user?._id || order.user) !== String(req.user._id) && req.user.role !== "admin") {
     return res.status(403).json({ message: "Not authorized to view this order" });
+  }
+  if (req.user.role === "admin") {
+    const [withFiles] = await withPrintFiles([order]);
+    return res.json({ order: withFiles });
   }
   return res.json({ order });
 };
@@ -175,10 +159,36 @@ export const trackOrder = async (req, res) => {
   });
 };
 
+/**
+ * Admin views: mark each order item whose product has a production print
+ * file attached, so the studio can download it from the order.
+ */
+const withPrintFiles = async (orders) => {
+  const productIds = [
+    ...new Set(
+      orders.flatMap((o) => (o.items || []).filter((i) => i.fromCatalog !== false && i.product).map((i) => String(i.product)))
+    ),
+  ];
+  const printable = productIds.length
+    ? await Product.find({ _id: { $in: productIds }, "printFile.filename": { $exists: true } }).select("+printFile")
+    : [];
+  const files = new Map(
+    printable.map((p) => [String(p._id), { originalName: p.printFile.originalName, size: p.printFile.size }])
+  );
+  return orders.map((o) => {
+    const order = typeof o.toObject === "function" ? o.toObject() : o;
+    order.items = (order.items || []).map((i) => ({
+      ...i,
+      printFile: i.fromCatalog !== false && i.product ? files.get(String(i.product)) || null : null,
+    }));
+    return order;
+  });
+};
+
 // Admin Controllers
 export const getAdminOrders = async (req, res) => {
   const { status, search } = req.query;
-  const filter = {};
+  const filter = { awaitingPayment: { $ne: true } };
   if (status && status !== "all") filter.status = status;
 
   let query = Order.find(filter).populate("user", "name email").sort({ createdAt: -1 });
@@ -197,7 +207,7 @@ export const getAdminOrders = async (req, res) => {
     );
   }
 
-  return res.json({ orders: results, count: results.length });
+  return res.json({ orders: await withPrintFiles(results), count: results.length });
 };
 
 export const updateOrderStatus = async (req, res) => {
@@ -218,6 +228,7 @@ export const updateOrderStatus = async (req, res) => {
   if (estimatedDelivery !== undefined) order.estimatedDelivery = new Date(estimatedDelivery);
 
   await order.save();
+  if (status === "cancelled" && oldStatus !== "cancelled") await restoreStock(order._id);
 
   // Dispatch Status Change Emails Asynchronously
   if (status && status !== oldStatus) {
@@ -250,7 +261,7 @@ export const getAdminStats = async (req, res) => {
   const [totalProducts, totalCategories, orders, lowStockProducts] = await Promise.all([
     Product.countDocuments(),
     Category.countDocuments(),
-    Order.find().sort({ createdAt: -1 }),
+    Order.find({ awaitingPayment: { $ne: true } }).sort({ createdAt: -1 }),
     Product.find({ stock: { $lte: 10 } }).limit(5),
   ]);
 
@@ -328,6 +339,7 @@ export const issueOrderRefund = async (req, res) => {
   order.status = "cancelled";
 
   await order.save();
+  await restoreStock(order._id);
 
   // Dispatch Luxury Refund Notification Email
   sendRefundNotificationEmail({
@@ -384,6 +396,7 @@ export const requestOrderCancellation = async (req, res) => {
     order.cancelledAt = new Date();
 
     await order.save();
+    await restoreStock(order._id);
 
     // Dispatch Refund Email
     sendRefundNotificationEmail({
