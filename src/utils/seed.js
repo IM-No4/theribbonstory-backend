@@ -366,7 +366,12 @@ export const seedData = async ({ force = false } = {}) => {
       "[Seed] No admin account created: set ADMIN_EMAIL and ADMIN_PASSWORD (12+ characters) to create one."
     );
   }
-  if (!adminUser && canCreateAdmin) {
+  if (adminUser && configuredPassword && configuredPassword.length >= 12) {
+    adminUser.password = configuredPassword;
+    adminUser.role = "admin";
+    await adminUser.save();
+    console.log(`Admin account password updated from ADMIN_PASSWORD for: ${adminEmail}`);
+  } else if (!adminUser && canCreateAdmin) {
     // Never fall back to a well-known default password
     const adminPassword =
       configuredPassword && configuredPassword.length >= 12

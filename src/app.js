@@ -25,6 +25,9 @@ import reference3dRoutes from "./routes/reference3dRoutes.js";
 import adminRoutes from "./routes/adminRoutes.js";
 import subscriberRoutes from "./routes/subscriberRoutes.js";
 import seoRoutes from "./routes/seoRoutes.js";
+import configRoutes from "./routes/configRoutes.js";
+import studio3dRoutes from "./routes/studio3dRoutes.js";
+import chibiRoutes from "./routes/chibiRoutes.js";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 dotenv.config({ path: path.join(__dirname, "..", ".env") });
@@ -147,6 +150,9 @@ app.use("/api/3d-agent", reference3dRoutes);
 app.use("/api/admin", adminRoutes);
 app.use("/api/subscribers", subscriberRoutes);
 app.use("/api/waitlist", subscriberRoutes);
+app.use("/api/config", configRoutes);
+app.use("/api/3d-studio", studio3dRoutes);
+app.use("/api/chibi", chibiRoutes);
 
 app.use(notFound);
 app.use(errorHandler);

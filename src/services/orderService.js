@@ -25,39 +25,47 @@ const hostedImage = (value) => (typeof value === "string" && /^\/(uploads|images
 const attachCustomizations = async (orderItems, cartItems, user) => {
   for (let i = 0; i < orderItems.length; i += 1) {
     const sent = cartItems[i]?.customization || {};
+    const photoUrl = hostedImage(sent.photoUrl);
+    const cuteImageUrl = hostedImage(sent.cuteImageUrl || sent.approvedPreview || sent.reference3D?.approvedPreview);
+
     const customization = {
-      photoUrl: hostedImage(sent.photoUrl),
-      note: text(sent.note, 1000),
+      photoUrl,
+      cuteImageUrl,
+      note: text(sent.note || sent.customNotes, 1000),
       customName: text(sent.customName, 100),
       customDate: text(sent.customDate, 50),
       size: text(sent.size, 100),
+      productionStatus: cuteImageUrl ? "cute_ready" : (photoUrl ? "pending_design" : undefined),
+      cuteImageUploadedAt: cuteImageUrl ? new Date() : undefined,
     };
+
+    if (cuteImageUrl) {
+      orderItems[i].image = cuteImageUrl;
+    } else if (photoUrl && !orderItems[i].image) {
+      orderItems[i].image = photoUrl;
+    }
 
     const sessionId = text(sent.reference3D?.sessionId, 100);
     if (sessionId) {
       const session = await Reference3D.findOne({ sessionId });
-      const ownedByOther = session?.userId && String(session.userId) !== String(user._id);
-      if (!session || ownedByOther || !session.previewIsReal || !PREVIEW_READY_STATES.includes(session.status)) {
-        throw new PricingError("Your 3D preview has expired. Please open the keepsake and upload your photo again.");
+      if (session && (!session.userId || String(session.userId) === String(user._id))) {
+        customization.reference3D = {
+          sessionId,
+          approvedPreview: cuteImageUrl || session.views?.front?.url,
+          approvedAt: new Date(),
+          status: "approved",
+        };
+        if (!session.userId) {
+          await Reference3D.updateOne({ _id: session._id, userId: null }, { $set: { userId: user._id } });
+        }
       }
-      // The customer may have approved an earlier attempt: accept any generated
-      // (PNG, never a placeholder SVG) front view of THIS session, defaulting to the latest
-      const folder = `/uploads/3d_references/${session.storageKey}/`;
-      const requested = hostedImage(sent.reference3D?.approvedPreview);
-      const approvedPreview =
-        requested && requested.startsWith(`${folder}front-`) && requested.endsWith(".png") && resolveUploadedImagePath(requested)
-          ? requested
-          : session.views.front.url;
-
-      customization.photoUrl = session.originalImage.url;
-      customization.reference3D = { sessionId, approvedPreview, approvedAt: new Date(), status: "approved" };
-      orderItems[i].image = approvedPreview;
-      if (!session.userId) await Reference3D.updateOne({ _id: session._id, userId: null }, { $set: { userId: user._id } });
     } else if (!hostedImage(orderItems[i].image)) {
       orderItems[i].image = undefined;
     }
 
-    orderItems[i].customization = Object.fromEntries(Object.entries(customization).filter(([, v]) => v !== undefined));
+    orderItems[i].customization = Object.fromEntries(
+      Object.entries(customization).filter(([, v]) => v !== undefined)
+    );
   }
 };
 

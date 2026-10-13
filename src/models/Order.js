@@ -18,6 +18,21 @@ const orderItemSchema = new mongoose.Schema(
       customName: String,
       customDate: String,
       size: String,
+      // Cute 3D Keepsake visual design uploaded by admin (ChatGPT / Midjourney)
+      cuteImageUrl: String,
+      cuteImageUploadedAt: Date,
+      // 3D Model file (.3mf, .obj, .stl, .glb, .zip) generated via Tripo Studio & archived
+      model3dUrl: String,
+      model3dFilename: String,
+      model3dSize: Number,
+      model3dUploadedAt: Date,
+      // Workshop production pipeline status
+      productionStatus: {
+        type: String,
+        enum: ["pending_design", "cute_ready", "model_ready", "queued_for_print", "printed"],
+        default: "pending_design",
+      },
+      productionNotes: String,
       reference3D: {
         sessionId: String,
         // The exact preview image the customer approved: the design to print
@@ -33,7 +48,7 @@ const orderItemSchema = new mongoose.Schema(
       },
     },
   },
-  { _id: false }
+  { _id: true }
 );
 
 const orderSchema = new mongoose.Schema(
