@@ -10,7 +10,16 @@ const slugify = (s) =>
 
 export const getCategories = async (req, res) => {
   const categories = await Category.find({ isActive: { $ne: false } }).sort({ order: 1, createdAt: 1 });
-  return res.json({ categories });
+  const categoriesWithCount = await Promise.all(
+    categories.map(async (cat) => {
+      const productCount = await Product.countDocuments({ category: cat.slug, isActive: { $ne: false } });
+      return {
+        ...cat.toObject(),
+        productCount,
+      };
+    })
+  );
+  return res.json({ categories: categoriesWithCount });
 };
 
 export const getCategoryBySlug = async (req, res) => {
@@ -99,3 +108,66 @@ export const deleteCategory = async (req, res) => {
     message: `Category "${category.name}" deleted. (${productCount} products were in this category)`,
   });
 };
+
+export const getCategoryProducts = async (req, res) => {
+  const { id } = req.params;
+  const isId = id.match(/^[0-9a-fA-F]{24}$/);
+  const category = await Category.findOne(isId ? { _id: id } : { slug: id });
+  if (!category) return res.status(404).json({ message: "Collection not found" });
+
+  const products = await Product.find({ category: category.slug }).sort({ createdAt: -1 });
+  return res.json({ category, products, count: products.length });
+};
+
+export const assignProductsToCategory = async (req, res) => {
+  const { id } = req.params;
+  const { productIds } = req.body;
+  if (!Array.isArray(productIds) || productIds.length === 0) {
+    return res.status(400).json({ message: "productIds array is required" });
+  }
+
+  const isId = id.match(/^[0-9a-fA-F]{24}$/);
+  const category = await Category.findOne(isId ? { _id: id } : { slug: id });
+  if (!category) return res.status(404).json({ message: "Collection not found" });
+
+  const result = await Product.updateMany(
+    { _id: { $in: productIds } },
+    { $set: { category: category.slug } }
+  );
+
+  const updatedCount = await Product.countDocuments({ category: category.slug });
+
+  return res.json({
+    message: `${result.modifiedCount} product(s) assigned to "${category.name}"`,
+    modifiedCount: result.modifiedCount,
+    productCount: updatedCount,
+  });
+};
+
+export const removeProductsFromCategory = async (req, res) => {
+  const { id } = req.params;
+  const { productIds, targetCategory } = req.body;
+  if (!Array.isArray(productIds) || productIds.length === 0) {
+    return res.status(400).json({ message: "productIds array is required" });
+  }
+
+  const isId = id.match(/^[0-9a-fA-F]{24}$/);
+  const category = await Category.findOne(isId ? { _id: id } : { slug: id });
+  if (!category) return res.status(404).json({ message: "Collection not found" });
+
+  const fallbackSlug = targetCategory || "general";
+
+  const result = await Product.updateMany(
+    { _id: { $in: productIds }, category: category.slug },
+    { $set: { category: fallbackSlug } }
+  );
+
+  const updatedCount = await Product.countDocuments({ category: category.slug });
+
+  return res.json({
+    message: `${result.modifiedCount} product(s) removed from "${category.name}"`,
+    modifiedCount: result.modifiedCount,
+    productCount: updatedCount,
+  });
+};
+

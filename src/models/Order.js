@@ -17,7 +17,9 @@ const orderItemSchema = new mongoose.Schema(
       // Personalisation the customer typed in (previously dropped on save)
       customName: String,
       customDate: String,
+      category: String,
       size: String,
+      dimensions: String,
       // Cute 3D Keepsake visual design uploaded by admin (ChatGPT / Midjourney)
       cuteImageUrl: String,
       cuteImageUploadedAt: Date,

@@ -56,7 +56,7 @@ PHYSICALLY PLA-PRINTABLE
 3D COLLECTIBLE FIGURINE DESIGN.
 
 The final visual should look like a real physical figurine that could
-reasonably be manufactured using a Bambu Lab A1 / A1 Combo with
+reasonably be manufactured using an industrial multi-color FDM 3D printer with
 multi-color PLA filament.
 
 The design should eventually be suitable for FDM 3D printing.
@@ -181,10 +181,10 @@ Physical 3D forms with simplified sculpted folds, clear seams, and solid color b
 Solid filament colors, matte or semi-matte PLA appearance. Avoid photographic textures or complex shaders.
 
 ============================================================
-10. BAMBU LAB A1 / PLA PRINT REFERENCE (CRITICAL NOTE ON LAYER LINES)
+10. MULTI-COLOR FDM / PLA PRINT REFERENCE (CRITICAL NOTE ON LAYER LINES)
 ============================================================
 
-Target process: Bambu Lab A1 / A1 Combo (FDM printing, 0.4mm nozzle, multi-color PLA).
+Target process: Industrial Multi-Color FDM printing (0.4mm nozzle, multi-color PLA).
 IMPORTANT: Geometric clarity for Image-to-3D > simulated print texture.
 Clearly recognizable as a PLA print, but with VERY SUBTLE layer texture.
 DO NOT put heavy aggressive horizontal layer lines over faces, clothes, or objects, because downstream 3D reconstruction models (Meshy/Tripo) may mistake heavy simulated lines for real surface geometry ridges.
@@ -528,8 +528,8 @@ const generateStyledReferenceSvg = ({
     <text x="12" y="27" fill="#38bdf8" font-family="-apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif" font-size="10" font-weight="700">MESHY / TRIPO READY</text>
   </g>
 
-  <!-- Watermark-Free Bambu Lab A1 Compatibility Spec -->
-  <text x="256" y="492" text-anchor="middle" fill="#94a3b8" font-family="-apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif" font-size="10" font-weight="500">Ribbon Story Image-to-3D Reference • Bambu Lab A1 PLA Spec</text>
+  <!-- Watermark-Free Multi-Color FDM Compatibility Spec -->
+  <text x="256" y="492" text-anchor="middle" fill="#94a3b8" font-family="-apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif" font-size="10" font-weight="500">Ribbon Story Image-to-3D Reference • Multi-Color FDM PLA Spec</text>
 </svg>`;
 };
 
@@ -851,7 +851,7 @@ export const completeReferencePack = async ({ sessionId, approvedFrontPath, orde
     const manifest = {
       engine: "Ribbon Story Image-to-3D Reference Agent (Google Gemini Powered)",
       version: "3.0.0",
-      targetManufacturing: "Bambu Lab A1 / A1 Combo (FDM Multi-Color PLA, 0.4mm nozzle)",
+      targetManufacturing: "Industrial FDM (Multi-Color PLA, 0.4mm nozzle)",
       downstreamPipeline: "Image-to-3D reconstruction (Meshy / Tripo / TripoSG), front view = customer-approved design",
       sessionId: record.sessionId,
       orderId,

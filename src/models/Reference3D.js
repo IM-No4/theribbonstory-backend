@@ -78,7 +78,7 @@ const reference3DSchema = new mongoose.Schema(
       fdmPrintability: { type: Number, default: 94 },
       crossViewConsistency: { type: Number, default: 96 },
       neutralLighting: { type: Number, default: 95 },
-      targetPrinter: { type: String, default: "Bambu Lab A1 / A1 Combo (0.4mm nozzle)" },
+      targetPrinter: { type: String, default: "Industrial Multi-Color FDM Printer (0.4mm nozzle)" },
       reconstructionEngine: { type: String, default: "Meshy / Tripo Image-to-3D Ready" },
     },
 

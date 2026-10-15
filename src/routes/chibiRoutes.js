@@ -52,6 +52,7 @@ router.post("/generate", upload.single("photo"), async (req, res) => {
 
   try {
     let result = null;
+    let generationError = null;
 
     if (req.file) {
       // 1. Ensure permanent customer photo storage
@@ -67,13 +68,15 @@ router.post("/generate", upload.single("photo"), async (req, res) => {
       try {
         result = await generateChibiFromLocalFile(permanentPath, customPrompt);
       } catch (genError) {
-        console.warn("[Chibi Generation Notice] Instant 3D preview deferred:", genError.message || genError);
+        console.warn("[Chibi Generation Notice] Instant 3D preview failed:", genError.message || genError);
+        generationError = genError.message || "3D preview generation failed";
       }
     } else if (photoUrl) {
       try {
         result = await generateChibiFromUrl(photoUrl, customPrompt);
       } catch (genError) {
-        console.warn("[Chibi Generation Notice] Instant 3D preview deferred:", genError.message || genError);
+        console.warn("[Chibi Generation Notice] Instant 3D preview failed:", genError.message || genError);
+        generationError = genError.message || "3D preview generation failed";
       }
     } else {
       return res.status(400).json({ error: "Please upload a photo to customize your keepsake." });
@@ -91,14 +94,17 @@ router.post("/generate", upload.single("photo"), async (req, res) => {
       });
     }
 
-    // Graceful studio fallback: photo is safely stored; craftsmen model directly from photo
+    // Generation failed or deferred — return error info so frontend can display it
     return res.json({
       success: true,
       photoUrl,
       imageUrl: null,
       cuteImageUrl: null,
       fallbackToPhoto: true,
-      message: "Your photo is saved. Our 3D modeling studio will craft your keepsake directly from your photograph.",
+      error: generationError || null,
+      message: generationError
+        ? `3D preview generation failed: ${generationError}`
+        : "Your photo is saved. Our 3D modeling studio will craft your keepsake directly from your photograph.",
     });
   } catch (error) {
     console.error("[Chibi Request Error]:", error);
