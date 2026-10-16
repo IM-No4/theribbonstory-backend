@@ -62,7 +62,7 @@ export const summarizeSales = (orders, { from, to, previous = [], days }) => {
     paymentSplit: split,
     topProducts: [...products.values()].sort((a, b) => b.revenue - a.revenue).slice(0, 5),
     fulfilment: {
-      toMake: count(["pending", "confirmed", "processing"]),
+      toMake: count(["pending", "confirmed", "processing", "ready"]),
       shipped: count(["shipped"]),
       delivered: count(["delivered"]),
       cancelled: count(["cancelled"]),

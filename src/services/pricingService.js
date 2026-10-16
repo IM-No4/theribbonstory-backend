@@ -27,6 +27,7 @@ export const HAMPER_CATALOG = {
 export const FREE_SHIPPING_THRESHOLD = 999;
 export const STANDARD_SHIPPING_FEE = 79;
 export const MIDNIGHT_DELIVERY_FEE = 199;
+export const EXPRESS_PRIORITY_FEE = 199;
 const MAX_QUANTITY = 20;
 const MAX_LINE_ITEMS = 50;
 
@@ -173,6 +174,9 @@ export const computeOrderPricing = async ({ items, couponCode, deliverySlot }) =
   let shippingPrice = itemsPrice >= FREE_SHIPPING_THRESHOLD ? 0 : STANDARD_SHIPPING_FEE;
   if (typeof deliverySlot === "string" && deliverySlot.toLowerCase().includes("midnight")) {
     shippingPrice += MIDNIGHT_DELIVERY_FEE;
+  }
+  if (typeof deliverySlot === "string" && deliverySlot.toLowerCase().includes("express")) {
+    shippingPrice += EXPRESS_PRIORITY_FEE;
   }
 
   let coupon = null;

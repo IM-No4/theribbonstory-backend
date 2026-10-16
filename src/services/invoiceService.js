@@ -146,22 +146,48 @@ export const renderInvoicePdf = (order) =>
       doc.font("Helvetica-Bold").fillColor(ink).text(v, metaX + 72, 44 + i * 15, { width: right - metaX - 72 });
     });
 
-    // Bill to
+    // Bill to & Ship to
     let y = Math.max(doc.y, 130) + 14;
-    const a = order.shippingAddress || {};
+    const b = order.billingAddress || order.shippingAddress || {};
+    const s = order.shippingAddress || {};
+    const isDistinctShipTo = Boolean(order.billingAddress && s.line1 && (b.line1 !== s.line1 || b.name !== s.name));
+
     doc.moveTo(left, y).lineTo(right, y).strokeColor("#EBD3D8").lineWidth(1).stroke();
     y += 10;
-    doc.font("Helvetica-Bold").fontSize(9).fillColor(muted).text("BILL TO / SHIP TO", left, y);
-    doc.font("Helvetica-Bold").fontSize(10).fillColor(ink).text(a.name || order.user?.name || "Customer", left, y + 13);
-    doc.font("Helvetica").fontSize(9).fillColor(ink).text(
-      [[a.line1, a.line2].filter(Boolean).join(", "), [a.city, a.state, a.postalCode].filter(Boolean).join(", "), a.phone && `Phone: ${a.phone}`, order.user?.email].filter(Boolean).join("\n"),
-      left,
-      y + 27,
-      { width: 300 }
-    );
+    doc.font("Helvetica-Bold").fontSize(9).fillColor(muted).text(isDistinctShipTo ? "BILL TO" : "BILL TO / SHIP TO", left, y);
+    if (b.company) {
+      doc.font("Helvetica-Bold").fontSize(10).fillColor(ink).text(b.company, left, y + 13);
+      doc.font("Helvetica").fontSize(9).fillColor(ink).text(`Attn: ${b.name || order.user?.name || "Customer"}${b.gstin ? ` · GSTIN: ${b.gstin}` : ""}`, left, y + 25);
+      doc.font("Helvetica").fontSize(9).fillColor(ink).text(
+        [[b.line1, b.line2].filter(Boolean).join(", "), [b.city, b.state, b.postalCode].filter(Boolean).join(", "), b.phone && `Phone: ${b.phone}`, order.user?.email].filter(Boolean).join("\n"),
+        left,
+        y + 37,
+        { width: isDistinctShipTo ? 230 : 300 }
+      );
+    } else {
+      doc.font("Helvetica-Bold").fontSize(10).fillColor(ink).text(b.name || order.user?.name || "Customer", left, y + 13);
+      doc.font("Helvetica").fontSize(9).fillColor(ink).text(
+        [[b.line1, b.line2].filter(Boolean).join(", "), [b.city, b.state, b.postalCode].filter(Boolean).join(", "), b.gstin && `GSTIN: ${b.gstin}`, b.phone && `Phone: ${b.phone}`, order.user?.email].filter(Boolean).join("\n"),
+        left,
+        y + 27,
+        { width: isDistinctShipTo ? 230 : 300 }
+      );
+    }
+
+    if (isDistinctShipTo) {
+      doc.font("Helvetica-Bold").fontSize(9).fillColor(muted).text("SHIP TO", left + 250, y);
+      doc.font("Helvetica-Bold").fontSize(10).fillColor(ink).text(s.name || "Recipient", left + 250, y + 13);
+      doc.font("Helvetica").fontSize(9).fillColor(ink).text(
+        [[s.line1, s.line2].filter(Boolean).join(", "), [s.city, s.state, s.postalCode].filter(Boolean).join(", "), s.phone && `Phone: ${s.phone}`].filter(Boolean).join("\n"),
+        left + 250,
+        y + 27,
+        { width: 220 }
+      );
+    }
+
     const addressBottom = doc.y;
     if (seller.gstin) {
-      doc.font("Helvetica").fillColor(muted).text(`Place of supply: ${a.state || "—"}`, metaX, y + 13, { width: right - metaX });
+      doc.font("Helvetica").fillColor(muted).text(`Place of supply: ${b.state || s.state || "—"}`, metaX, y + 13, { width: right - metaX });
     }
     y = Math.max(addressBottom, doc.y) + 18;
 

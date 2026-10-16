@@ -14,6 +14,9 @@ const router = express.Router();
 router.post("/check-serviceability", checkPincode);
 router.get("/track/:identifier", trackOrderShipment);
 router.post("/webhook", handleWebhook);
+router.post("/updates", handleWebhook);
+router.post("/tracking", handleWebhook);
+router.post("/notify", handleWebhook);
 
 // Protected Admin Routes (Shiprocket Fulfillment)
 router.post("/create-shipment/:orderId", protect, admin, createShipment);

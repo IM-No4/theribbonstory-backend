@@ -28,6 +28,7 @@ const customerPhotoDir = path.join(path.dirname(fileURLToPath(import.meta.url)),
 router.post("/generate", upload.single("photo"), async (req, res) => {
   const engravingText = req.body?.engravingText?.trim();
   const artisanNotes = req.body?.artisanNotes?.trim();
+  const style = req.body?.style?.trim() || "chibi";
   let customPrompt = req.body?.prompt?.trim() || req.body?.customNotes?.trim() || "";
   let photoUrl = req.body?.photoUrl;
 
@@ -46,6 +47,7 @@ router.post("/generate", upload.single("photo"), async (req, res) => {
   console.log(`\n[API POST /api/chibi/generate] Received generation request:`);
   console.log(`- File:               ${req.file ? `${req.file.originalname} (${(req.file.size / 1024).toFixed(1)} KB)` : "None"}`);
   console.log(`- Photo URL:          ${photoUrl || "None"}`);
+  console.log(`- Figurine Style:     ${style}`);
   console.log(`- Engraved Base Text: ${engravingText || "None"}`);
   console.log(`- Artisan Notes:      ${artisanNotes || "None"}`);
   console.log(`- Combined Prompt:    ${customPrompt ? `\n${customPrompt}` : "None"}`);
@@ -66,14 +68,14 @@ router.post("/generate", upload.single("photo"), async (req, res) => {
 
       // 2. Generate 3D figurine from the saved file
       try {
-        result = await generateChibiFromLocalFile(permanentPath, customPrompt);
+        result = await generateChibiFromLocalFile(permanentPath, customPrompt, style);
       } catch (genError) {
         console.warn("[Chibi Generation Notice] Instant 3D preview failed:", genError.message || genError);
         generationError = genError.message || "3D preview generation failed";
       }
     } else if (photoUrl) {
       try {
-        result = await generateChibiFromUrl(photoUrl, customPrompt);
+        result = await generateChibiFromUrl(photoUrl, customPrompt, style);
       } catch (genError) {
         console.warn("[Chibi Generation Notice] Instant 3D preview failed:", genError.message || genError);
         generationError = genError.message || "3D preview generation failed";
@@ -91,6 +93,7 @@ router.post("/generate", upload.single("photo"), async (req, res) => {
         cuteImageUrl: result.url,
         filename: result.filename,
         size: result.size,
+        style,
       });
     }
 

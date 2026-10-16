@@ -8,6 +8,7 @@ import { alertNewOrder, checkLowStock } from "./studioAlerts.js";
 import Reference3D from "../models/Reference3D.js";
 import { completeReferencePack, resolveUploadedImagePath } from "./gemini3dAgent.js";
 import { issueInvoice } from "./invoiceService.js";
+import { calculateDeliveryEstimate } from "./deliveryEstimateService.js";
 
 /** Unpaid online orders are deleted after this long (customer abandoned payment) */
 export const PAYMENT_WINDOW_MS = 3 * 24 * 60 * 60 * 1000;
@@ -96,8 +97,16 @@ export const startReferencePacks = (order) => {
  * server-side pricing. Shared by COD orders and pending online orders.
  */
 export const buildOrderFields = async (body, user) => {
-  const { items, shippingAddress, couponCode, giftOptions, scheduledDeliveryDate, deliverySlot, courierPartner } =
-    body || {};
+  const {
+    items,
+    shippingAddress,
+    billingAddress,
+    couponCode,
+    giftOptions,
+    scheduledDeliveryDate,
+    deliverySlot,
+    courierPartner,
+  } = body || {};
 
   if (!Array.isArray(items) || items.length === 0) throw new PricingError("Your cart is empty");
   if (!shippingAddress?.line1 || !shippingAddress?.city || !shippingAddress?.postalCode) {
@@ -111,12 +120,27 @@ export const buildOrderFields = async (body, user) => {
   });
   await attachCustomizations(orderItems, items, user);
 
-  // Estimated delivery: scheduled date, or 4 days from now
+  // Dynamic realistic estimated delivery considering single printer queue & delivery slot
   let estimatedDelivery = scheduledDeliveryDate ? new Date(scheduledDeliveryDate) : null;
   if (!estimatedDelivery || isNaN(estimatedDelivery)) {
-    estimatedDelivery = new Date();
-    estimatedDelivery.setDate(estimatedDelivery.getDate() + 4);
+    try {
+      const isExpressSlot = typeof deliverySlot === "string" && deliverySlot.toLowerCase().includes("express");
+      const est = await calculateDeliveryEstimate({
+        pincode: shippingAddress.postalCode,
+        items: orderItems,
+      });
+      estimatedDelivery = new Date(isExpressSlot ? est.express.edd : est.standard.edd);
+    } catch {
+      estimatedDelivery = new Date();
+      estimatedDelivery.setDate(estimatedDelivery.getDate() + 4);
+    }
   }
+
+  // Use provided billingAddress, or fallback to shippingAddress
+  const finalBillingAddress =
+    billingAddress && billingAddress.line1 && billingAddress.city
+      ? billingAddress
+      : shippingAddress;
 
   return {
     coupon,
@@ -124,6 +148,7 @@ export const buildOrderFields = async (body, user) => {
       user: user._id,
       items: orderItems,
       shippingAddress,
+      billingAddress: finalBillingAddress,
       itemsPrice,
       shippingPrice,
       discountPrice,

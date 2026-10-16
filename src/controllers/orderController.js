@@ -150,14 +150,16 @@ export const trackOrder = async (req, res) => {
   const statusSteps = [
     { key: "confirmed", label: "Order Confirmed", desc: "Payment verified and order booked" },
     { key: "processing", label: "Artisan Crafting & Printing", desc: "Your bespoke keepsake is being hand-finished" },
+    { key: "ready", label: "Ready for Dispatch", desc: "Quality checked and luxury ribbon boxed" },
     { key: "shipped", label: "Packed & In Transit", desc: "Dispatched with luxury ribbon packaging" },
     { key: "delivered", label: "Delivered", desc: "Safely received and unwrapped" },
   ];
 
   let currentStep = 1;
   if (order.status === "processing") currentStep = 2;
-  else if (order.status === "shipped") currentStep = 3;
-  else if (order.status === "delivered") currentStep = 4;
+  else if (order.status === "ready") currentStep = 3;
+  else if (order.status === "shipped") currentStep = 4;
+  else if (order.status === "delivered") currentStep = 5;
   else if (order.status === "cancelled") currentStep = 0;
 
   return res.json({
@@ -237,6 +239,41 @@ export const getAdminOrders = async (req, res) => {
   return res.json({ orders: await withPrintFiles(results), count: results.length });
 };
 
+export const VALID_ORDER_STATUSES = [
+  "pending",
+  "confirmed",
+  "processing",
+  "ready",
+  "shipped",
+  "delivered",
+  "cancelled",
+];
+
+export const VALID_STATUS_TRANSITIONS = {
+  // pending: customer placed order, awaiting payment or verification
+  pending: ["confirmed", "cancelled"],
+
+  // confirmed: payment verified; next is artisan crafting/workshop production
+  // (or directly 'ready' for pre-made ready-to-ship catalog items)
+  confirmed: ["processing", "ready", "cancelled"],
+
+  // processing: 3D modeling, printing & crafting; next is ready for dispatch
+  processing: ["ready", "cancelled"],
+
+  // ready: quality-checked & ribbon-boxed; next is shipping via Shiprocket
+  // (can return to processing if quality check fails and rework is needed)
+  ready: ["shipped", "processing", "cancelled"],
+
+  // shipped: handed to courier / Shiprocket in transit; next is delivered
+  shipped: ["delivered"],
+
+  // delivered: safely received by customer (settled final state)
+  delivered: [],
+
+  // cancelled: order terminated (settled final state)
+  cancelled: [],
+};
+
 export const updateOrderStatus = async (req, res) => {
   const { id } = req.params;
   const { status, isPaid, trackingNumber, courierPartner, estimatedDelivery } = req.body;
@@ -245,7 +282,38 @@ export const updateOrderStatus = async (req, res) => {
   if (!order) return res.status(404).json({ message: "Order not found" });
 
   const oldStatus = order.status;
-  if (status) order.status = status;
+
+  if (status && status !== oldStatus) {
+    if (!VALID_ORDER_STATUSES.includes(status)) {
+      return res.status(400).json({
+        message: `Invalid status '${status}'. Allowed statuses: ${VALID_ORDER_STATUSES.join(", ")}`,
+      });
+    }
+
+    const allowedNext = VALID_STATUS_TRANSITIONS[oldStatus] || [];
+    if (!allowedNext.includes(status)) {
+      const formattedOld = oldStatus.toUpperCase();
+      const formattedNew = status.toUpperCase();
+      const allowedText =
+        allowedNext.length > 0
+          ? `Allowed next transition(s): ${allowedNext.map((s) => `'${s}'`).join(", ")}.`
+          : `Order is in a final state ('${oldStatus}') and cannot be changed.`;
+
+      return res.status(400).json({
+        message: `Invalid status transition: Cannot change from ${formattedOld} to ${formattedNew}. Order sequence: Pending -> Confirmed -> Processing -> Ready -> Shipped -> Delivered. ${allowedText}`,
+      });
+    }
+
+    // Enforce business rule: only orders in 'ready' can move to 'shipped'
+    if (status === "shipped" && oldStatus !== "ready") {
+      return res.status(400).json({
+        message: "Order must be marked as 'Ready for Dispatch' before it can be shipped.",
+      });
+    }
+
+    order.status = status;
+  }
+
   if (isPaid !== undefined) {
     order.isPaid = Boolean(isPaid);
     if (order.isPaid && !order.paidAt) order.paidAt = new Date();

@@ -146,6 +146,7 @@ app.use("/api/upload", uploadRoutes);
 app.use("/api/coupons", couponRoutes);
 app.use("/api/reviews", reviewRoutes);
 app.use("/api/shipping", shippingRoutes);
+app.use("/api/logistics", shippingRoutes);
 app.use("/api/contact", contactRoutes);
 app.use("/api/3d-agent", reference3dRoutes);
 app.use("/api/admin", adminRoutes);

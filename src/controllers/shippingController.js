@@ -10,19 +10,25 @@ import {
 } from "../services/shiprocketService.js";
 import { notifyStatusChange } from "../services/orderNotifications.js";
 
+import { calculateDeliveryEstimate } from "../services/deliveryEstimateService.js";
+
 /**
  * 1. Check Pincode Delivery Serviceability (Public)
+ * Considers single 3D printer queue, item quantities, and express priority queue.
  */
 export const checkPincode = async (req, res) => {
-  const { pincode, weight = 0.5, cod = 0 } = req.body;
+  const { pincode, items = [], quantity = 1, isCustom3D = false, weight = 0.5, cod = 0 } = req.body;
 
   if (!pincode || String(pincode).trim().length !== 6 || isNaN(pincode)) {
     return res.status(400).json({ message: "Please provide a valid 6-digit Indian pincode" });
   }
 
   try {
-    const result = await checkServiceability({
-      deliveryPincode: pincode,
+    const result = await calculateDeliveryEstimate({
+      pincode,
+      items,
+      quantity,
+      isCustom3D,
       weight,
       cod,
     });
@@ -59,6 +65,7 @@ export const trackOrderShipment = async (req, res) => {
     const statusSteps = [
       { key: "confirmed", label: "Order Confirmed", desc: "Payment verified & order booked" },
       { key: "processing", label: "Artisan Crafting", desc: "Your 3D keepsake is being handcrafted" },
+      { key: "ready", label: "Ready for Dispatch", desc: "Quality checked & wrapped in luxury box" },
       { key: "shipped", label: "Handed to Shiprocket", desc: "Packed in satin ribbon box & dispatched" },
       { key: "delivered", label: "Delivered", desc: "Safely received & unwrapped" },
     ];
@@ -66,8 +73,9 @@ export const trackOrderShipment = async (req, res) => {
     let currentStep = 1;
     const currentStatus = order?.status || "shipped";
     if (currentStatus === "processing") currentStep = 2;
-    else if (currentStatus === "shipped") currentStep = 3;
-    else if (currentStatus === "delivered") currentStep = 4;
+    else if (currentStatus === "ready") currentStep = 3;
+    else if (currentStatus === "shipped") currentStep = 4;
+    else if (currentStatus === "delivered") currentStep = 5;
     else if (currentStatus === "cancelled") currentStep = 0;
 
     return res.json({
@@ -118,6 +126,15 @@ export const createShipment = async (req, res) => {
   try {
     const order = await Order.findById(orderId).populate("user", "name email");
     if (!order) return res.status(404).json({ message: "Order not found" });
+
+    // Enforce status sequence: Only orders marked as 'ready' can be dispatched to Shiprocket
+    if (order.status !== "ready") {
+      const shortId = order._id.toString().slice(-6).toUpperCase();
+      return res.status(400).json({
+        message: `Order #${shortId} must be marked as 'Ready for Dispatch' before shipping with Shiprocket. (Current status: ${order.status.toUpperCase()})`,
+      });
+    }
+
     const previousStatus = order.status;
 
     // Step 1: Create Order in Shiprocket
@@ -202,7 +219,8 @@ export const handleWebhook = async (req, res) => {
   try {
     const cleanAwb = String(awb || "").trim();
     if (!cleanAwb && !order_id) {
-      return res.status(400).json({ message: "Invalid webhook payload" });
+      // Shiprocket test ping verification
+      return res.status(200).json({ success: true, message: "Webhook endpoint active and verified" });
     }
 
     const lookup = [];

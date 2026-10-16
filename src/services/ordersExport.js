@@ -4,7 +4,7 @@ import { invoiceData } from "./invoiceService.js";
 const IST_OFFSET_MS = 330 * 60 * 1000;
 const DAY_MS = 24 * 60 * 60 * 1000;
 export const EXPORT_LIMIT = 10000;
-const STATUSES = ["pending", "confirmed", "processing", "shipped", "delivered", "cancelled"];
+const STATUSES = ["pending", "confirmed", "processing", "ready", "shipped", "delivered", "cancelled"];
 
 /** "2026-10-08" -> the UTC instant of IST midnight that day */
 const istDayStart = (ymd) => {
