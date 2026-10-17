@@ -3,11 +3,11 @@ module.exports = {
     {
       name: "trs-backend",
       script: "src/server.js",
-      instances: "max",
+      instances: 1,
       exec_mode: "cluster",
       env: {
         NODE_ENV: "production",
-        PORT: 5000,
+        PORT: 5050,
       },
     },
   ],
