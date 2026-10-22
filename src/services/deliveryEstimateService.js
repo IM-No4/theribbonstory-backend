@@ -2,9 +2,24 @@ import Order from "../models/Order.js";
 import { checkServiceability as checkShiprocketServiceability } from "./shiprocketService.js";
 
 export const PRINTER_CAPACITY_PER_DAY = 1; // Single 3D printer capacity: 1 keepsake figurine per day
+export const DAILY_PRINT_SLOTS = 3; // Daily studio 3D printing capacity slots
 export const STANDARD_SHIPPING_FEE = 79;
 export const EXPRESS_PRIORITY_FEE = 199;
 export const FREE_SHIPPING_THRESHOLD = 999;
+
+/**
+ * Calculates remaining print slots available for today's run based on active queue:
+ * E.g., when 0 ahead -> returns 3 ("Only 3 print slots left today")
+ * When 1 ahead -> returns 2
+ * When 2 ahead -> returns 1
+ * When 3+ ahead -> returns 1 (urgent next batch spot)
+ */
+export function calculatePrintSlotsLeft(totalPendingUnits = 0, dailyCapacity = DAILY_PRINT_SLOTS) {
+  const pending = Math.max(0, Number(totalPendingUnits) || 0);
+  if (pending <= 0) return dailyCapacity;
+  const remaining = dailyCapacity - (pending % dailyCapacity);
+  return remaining === dailyCapacity ? 1 : Math.max(1, remaining);
+}
 
 /**
  * Returns current printer queue statistics from active database orders:
@@ -151,6 +166,9 @@ export async function calculateDeliveryEstimate({
       day: "numeric",
     });
 
+  const slotsLeft = calculatePrintSlotsLeft(queue.totalPendingUnits, DAILY_PRINT_SLOTS);
+  const slotsLeftText = `Only ${slotsLeft} print slot${slotsLeft === 1 ? "" : "s"} left today`;
+
   return {
     success: true,
     serviceable: true,
@@ -160,6 +178,9 @@ export async function calculateDeliveryEstimate({
     customUnits,
     queueStats: {
       singlePrinterCapacity: "1 figurine/day",
+      dailyCapacity: DAILY_PRINT_SLOTS,
+      slotsLeft,
+      slotsLeftText,
       totalQueueItemsAhead: queue.totalPendingUnits,
       expressQueueAhead: queue.expressPendingUnits,
       standardQueueAhead: queue.standardPendingUnits,
@@ -174,7 +195,7 @@ export async function calculateDeliveryEstimate({
         ? `${standardQueueDays}d in queue + ${standardProdDays}d printing + ${courierDaysStandard}d courier transit`
         : `1d dispatch + ${courierDaysStandard}d courier transit`,
       explanation: hasCustom3D
-        ? `Includes current 3D print queue (${queue.totalPendingUnits} item${queue.totalPendingUnits === 1 ? "" : "s"} ahead in our studio), ${customUnits} keepsake print time, and courier transit.`
+        ? `Includes custom 3D studio printing (${slotsLeftText.toLowerCase()}), ${customUnits} keepsake print time, and courier transit.`
         : `Ready-to-ship order. Dispatched within 24h via courier.`,
       courierName: isMetro ? "BlueDart Express" : "Delhivery Surface",
       fee: STANDARD_SHIPPING_FEE,

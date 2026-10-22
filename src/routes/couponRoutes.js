@@ -1,7 +1,9 @@
 import express from "express";
 import {
   applyCoupon,
+  getAvailableCoupons,
   getAdminCoupons,
+  toggleCouponStatus,
   createCoupon,
   updateCoupon,
   deleteCoupon,
@@ -11,12 +13,14 @@ import { asyncHandler } from "../utils/asyncHandler.js";
 
 const router = express.Router();
 
-// Public route to apply coupon
+// Public routes
+router.get("/available", asyncHandler(getAvailableCoupons));
 router.post("/apply", asyncHandler(applyCoupon));
 
 // Admin routes
 router.get("/admin/all", protect, admin, asyncHandler(getAdminCoupons));
 router.post("/", protect, admin, asyncHandler(createCoupon));
+router.patch("/:id/toggle", protect, admin, asyncHandler(toggleCouponStatus));
 router.put("/:id", protect, admin, asyncHandler(updateCoupon));
 router.delete("/:id", protect, admin, asyncHandler(deleteCoupon));
 

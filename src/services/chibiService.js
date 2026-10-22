@@ -73,8 +73,64 @@ export const FIGURINE_STYLES = {
   }
 };
 
-export function buildFigurinePrompt(styleKey = "chibi", customPrompt = null) {
+export async function getActivePrintColors() {
+  try {
+    const { default: StudioSettings, DEFAULT_PRINT_COLORS } = await import("../models/StudioSettings.js");
+    const settings = await StudioSettings.findOne({ key: "default" }).lean();
+    if (settings && Array.isArray(settings.availableColors) && settings.availableColors.length > 0) {
+      const active = settings.availableColors.filter((c) => c.isActive !== false);
+      if (active.length > 0) return active;
+    }
+    return DEFAULT_PRINT_COLORS.filter((c) => c.isActive !== false);
+  } catch (err) {
+    console.warn("Could not load print colors from DB:", err.message);
+    return [
+      { name: "White", hex: "#FFFFFF" },
+      { name: "Black", hex: "#111111" },
+      { name: "Beige / Skin", hex: "#F5D0B0" },
+      { name: "Red", hex: "#E53E3E" },
+      { name: "Blue", hex: "#3182CE" },
+      { name: "Yellow", hex: "#D69E2E" },
+      { name: "Green", hex: "#38A169" },
+      { name: "Brown", hex: "#7B341E" },
+      { name: "Grey", hex: "#718096" },
+      { name: "Pink", hex: "#ED64A6" },
+      { name: "Orange", hex: "#DD6B20" },
+    ];
+  }
+}
+
+export function buildFigurinePrompt(styleKey = "chibi", customPrompt = null, printColors = null) {
   const style = FIGURINE_STYLES[styleKey] || FIGURINE_STYLES.chibi;
+
+  const colorNames = Array.isArray(printColors) && printColors.length > 0
+    ? printColors.map((c) => (typeof c === "string" ? c : c.name)).filter(Boolean)
+    : ["White", "Black", "Beige / Skin", "Red", "Blue", "Yellow", "Green", "Brown", "Grey", "Pink", "Orange"];
+
+  const printPaletteGuide = `
+PHYSICAL 3D PRINTING PALETTE & SIMPLIFICATION CONSTRAINTS (STRICT):
+1. AVAILABLE 3D WORKSHOP FILAMENT PALETTE:
+   The physical workshop 3D printer has ONLY the following filament colors available:
+   [${colorNames.join(", ")}].
+
+2. MAXIMUM 4 COLORS PER FIGURINE:
+   You MUST select AT MOST FOUR (4) colors from this available list for the ENTIRE 3D model (for example: Skin tone, Hair/Beard/Turban, Top/Shirt/Dress, Bottom/Pants/Base). Never use more than 4 colors across the entire model.
+
+3. COLOR QUANTIZATION (MAP COMPLEX SHADES TO BASIC PALETTE):
+   Map any color seen in the photo to the closest matching color from the available workshop list:
+   - Maroon, crimson, burgundy, dark magenta -> RED
+   - Navy blue, cobalt, teal, cyan -> BLUE
+   - Cream, ivory, warm peach -> BEIGE / SKIN or WHITE
+   - Charcoal, espresso, dark slate -> BLACK or GREY
+   - Olive, khaki, tan, mustard -> BROWN or YELLOW
+   Do NOT use off-palette gradient shades, shadows, or colors not in the list.
+
+4. GEOMETRIC SHAPE SIMPLIFICATION (NO INTRICATE PATTERNS):
+   Complex clothing designs, checks, stripes, polka dots, floral prints, graphic logos, or embroideries (such as on shirts, pants, skirts, dresses, or turbans) CANNOT be 3D printed.
+   - Completely ignore and discard all intricate patterns, logos, stripes, checks, and embroidery.
+   - Keep ONLY the clean geometric silhouette and physical shape of the garment (e.g. the basic shape of the shirt, pants, dress, turban, or jacket).
+   - Fill the entire clothing item with a single, clean, solid uniform basic color chosen from your 4-color palette (e.g., solid red turban, solid blue shirt, solid black pants).
+   - Keep all surfaces planar, smooth, solid, and block-colored for clean multi-color FDM printing.`.trim();
 
   const basePrompt = `${style.promptIntro}
 
@@ -83,9 +139,7 @@ CRITICAL SUBJECT & FACIAL FIDELITY:
 - ABSOLUTELY NO BEARD, MUSTACHE, OR FACIAL HAIR unless the person in the photo clearly and visibly has one. If the subject is female or clean-shaven, the face must remain completely smooth and clean-shaven. Do not add any unwanted facial hair.
 - If multiple people are in the photo, sculpt all of them standing together on the shared base.
 
-EXACT CLOTHING & COLORS FROM PHOTO:
-- Strictly replicate the EXACT same clothing type and outfit as shown in the reference image (e.g., if wearing a dress, keep the dress; if wearing jeans and t-shirt, keep jeans and t-shirt). Do NOT replace the outfit with different garments.
-- Strictly replicate the EXACT colors of the clothing from the photo. Do NOT invent new colors, do NOT introduce random colors, and do NOT alter the outfit color scheme.
+${printPaletteGuide}
 
 ${style.sculptingGuide}
 
@@ -135,7 +189,8 @@ async function saveGradioImageLocally(gradioUrl) {
  */
 export async function generateChibiFromLocalFile(localFilePath, customPrompt = null, style = "chibi") {
   const client = await getClient();
-  const prompt = buildFigurinePrompt(style, customPrompt);
+  const printColors = await getActivePrintColors();
+  const prompt = buildFigurinePrompt(style, customPrompt, printColors);
 
   const payload = {
     prompt,

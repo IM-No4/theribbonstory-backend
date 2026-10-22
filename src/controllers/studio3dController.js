@@ -2,6 +2,7 @@ import path from "path";
 import fs from "fs";
 import { fileURLToPath } from "url";
 import Order from "../models/Order.js";
+import StudioSettings, { DEFAULT_PRINT_COLORS } from "../models/StudioSettings.js";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const uploadsDir = path.join(__dirname, "..", "..", "uploads");
@@ -260,4 +261,63 @@ export const downloadAsset = async (req, res) => {
 
   const filename = downloadName ? path.basename(downloadName) : path.basename(filePath);
   res.download(filePath, filename);
+};
+
+/**
+ * GET /api/3d-studio/colors
+ * Retrieve configured 3D print filament colors
+ */
+export const getPrintColors = async (req, res) => {
+  let settings = await StudioSettings.findOne({ key: "default" }).lean();
+  if (!settings) {
+    const created = await StudioSettings.create({
+      key: "default",
+      availableColors: DEFAULT_PRINT_COLORS,
+      maxColorsPerModel: 4,
+    });
+    settings = created.toObject();
+  }
+  return res.json({
+    success: true,
+    availableColors: settings.availableColors || DEFAULT_PRINT_COLORS,
+    maxColorsPerModel: settings.maxColorsPerModel || 4,
+  });
+};
+
+/**
+ * PUT /api/3d-studio/colors
+ * Update configured 3D print filament colors
+ */
+export const updatePrintColors = async (req, res) => {
+  const { availableColors, maxColorsPerModel } = req.body;
+
+  if (!Array.isArray(availableColors)) {
+    return res.status(400).json({ message: "availableColors must be an array" });
+  }
+
+  let settings = await StudioSettings.findOne({ key: "default" });
+  if (!settings) {
+    settings = new StudioSettings({ key: "default" });
+  }
+
+  settings.availableColors = availableColors
+    .map((c) => ({
+      name: String(c.name || "").trim(),
+      hex: String(c.hex || "#000000").trim(),
+      isActive: c.isActive !== false,
+    }))
+    .filter((c) => c.name);
+
+  if (maxColorsPerModel !== undefined) {
+    settings.maxColorsPerModel = Math.max(1, Number(maxColorsPerModel) || 4);
+  }
+
+  await settings.save();
+
+  return res.json({
+    success: true,
+    message: "3D printing filament colors saved successfully",
+    availableColors: settings.availableColors,
+    maxColorsPerModel: settings.maxColorsPerModel,
+  });
 };

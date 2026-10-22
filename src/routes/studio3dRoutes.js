@@ -9,6 +9,8 @@ import {
   upload3DModelFile,
   updateKeepsakeProductionStatus,
   downloadAsset,
+  getPrintColors,
+  updatePrintColors,
 } from "../controllers/studio3dController.js";
 
 const router = express.Router();
@@ -56,6 +58,10 @@ router.patch(
   "/orders/:orderId/items/:itemIndex/status",
   asyncHandler(updateKeepsakeProductionStatus)
 );
+
+// Color Palette Management for 3D Printing
+router.get("/colors", asyncHandler(getPrintColors));
+router.put("/colors", asyncHandler(updatePrintColors));
 
 // Force-download asset with descriptive name
 router.get("/download", asyncHandler(downloadAsset));

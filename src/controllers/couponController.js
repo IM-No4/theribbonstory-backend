@@ -25,9 +25,33 @@ export const applyCoupon = async (req, res) => {
   });
 };
 
+export const getAvailableCoupons = async (req, res) => {
+  const now = new Date();
+  const coupons = await Coupon.find({
+    isActive: true,
+    $or: [{ validUntil: { $exists: false } }, { validUntil: null }, { validUntil: { $gte: now } }],
+  })
+    .select("code description discountType discountAmount minOrderAmount maxDiscount validUntil")
+    .sort({ discountAmount: -1 });
+  return res.json({ coupons });
+};
+
 export const getAdminCoupons = async (req, res) => {
   const coupons = await Coupon.find().sort({ createdAt: -1 });
   return res.json({ coupons });
+};
+
+export const toggleCouponStatus = async (req, res) => {
+  const { id } = req.params;
+  const coupon = await Coupon.findById(id);
+  if (!coupon) return res.status(404).json({ message: "Coupon not found" });
+
+  coupon.isActive = !coupon.isActive;
+  await coupon.save();
+  return res.json({
+    coupon,
+    message: `Coupon "${coupon.code}" is now ${coupon.isActive ? "Active" : "Disabled"}`,
+  });
 };
 
 export const createCoupon = async (req, res) => {
