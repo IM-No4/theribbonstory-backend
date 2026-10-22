@@ -105,41 +105,23 @@ export function buildFigurinePrompt(styleKey = "chibi", customPrompt = null, pri
 
   const colorNames = Array.isArray(printColors) && printColors.length > 0
     ? printColors.map((c) => (typeof c === "string" ? c : c.name)).filter(Boolean)
-    : ["White", "Black", "Beige / Skin", "Red", "Blue", "Yellow", "Green", "Brown", "Grey", "Pink", "Orange"];
-
-  const printPaletteGuide = `
-PHYSICAL 3D PRINTING PALETTE & SIMPLIFICATION CONSTRAINTS (STRICT):
-1. AVAILABLE 3D WORKSHOP FILAMENT PALETTE:
-   The physical workshop 3D printer has ONLY the following filament colors available:
-   [${colorNames.join(", ")}].
-
-2. MAXIMUM 4 COLORS PER FIGURINE:
-   You MUST select AT MOST FOUR (4) colors from this available list for the ENTIRE 3D model (for example: Skin tone, Hair/Beard/Turban, Top/Shirt/Dress, Bottom/Pants/Base). Never use more than 4 colors across the entire model.
-
-3. COLOR QUANTIZATION (MAP COMPLEX SHADES TO BASIC PALETTE):
-   Map any color seen in the photo to the closest matching color from the available workshop list:
-   - Maroon, crimson, burgundy, dark magenta -> RED
-   - Navy blue, cobalt, teal, cyan -> BLUE
-   - Cream, ivory, warm peach -> BEIGE / SKIN or WHITE
-   - Charcoal, espresso, dark slate -> BLACK or GREY
-   - Olive, khaki, tan, mustard -> BROWN or YELLOW
-   Do NOT use off-palette gradient shades, shadows, or colors not in the list.
-
-4. GEOMETRIC SHAPE SIMPLIFICATION (NO INTRICATE PATTERNS):
-   Complex clothing designs, checks, stripes, polka dots, floral prints, graphic logos, or embroideries (such as on shirts, pants, skirts, dresses, or turbans) CANNOT be 3D printed.
-   - Completely ignore and discard all intricate patterns, logos, stripes, checks, and embroidery.
-   - Keep ONLY the clean geometric silhouette and physical shape of the garment (e.g. the basic shape of the shirt, pants, dress, turban, or jacket).
-   - Fill the entire clothing item with a single, clean, solid uniform basic color chosen from your 4-color palette (e.g., solid red turban, solid blue shirt, solid black pants).
-   - Keep all surfaces planar, smooth, solid, and block-colored for clean multi-color FDM printing.`.trim();
+    : ["White", "Black", "Beige/Skin", "Red", "Blue", "Yellow", "Green", "Brown", "Grey", "Pink", "Orange"];
 
   const basePrompt = `${style.promptIntro}
 
-CRITICAL SUBJECT & FACIAL FIDELITY:
-- Faithfully preserve the exact person (or people) from the reference photo: match their face, gender, skin tone, eye expression, and hairstyle.
-- ABSOLUTELY NO BEARD, MUSTACHE, OR FACIAL HAIR unless the person in the photo clearly and visibly has one. If the subject is female or clean-shaven, the face must remain completely smooth and clean-shaven. Do not add any unwanted facial hair.
-- If multiple people are in the photo, sculpt all of them standing together on the shared base.
+SOLID-COLOR SCULPT (HIGHEST PRIORITY): Every part of the figurine is a smooth, matte, single-color moulded plastic surface, like a vinyl toy. Each color region is one flat uniform color with no texture, no printed or embossed pattern, no fabric weave, and no fine lines.
 
-${printPaletteGuide}
+Palette: max 4 colors from [${colorNames.join(", ")}]. Snap every photo color to the nearest one.
+
+HEADWEAR (turban, cap, scarf): Sculpt only the overall silhouette of the headwear as one smooth, solid, uniformly colored shape with soft rounded folds. The surface is plain matte red (or the nearest palette color) with no print, no embroidery, no bandhani dots, no motifs, and no fabric texture. It should look like a plain painted plastic cap.
+
+FACIAL HAIR: Only if the person clearly has a beard or mustache, sculpt it as ONE solid, smooth, rounded block of black or brown plastic that follows the jaw and upper lip, like a painted vinyl toy beard. It has a clean edge against the skin, and the whole shape is a single solid mass with no individual hairs, strands, stubble, or fade. If the person has no facial hair, the face is completely smooth. Hair on the head follows the same rule: one solid sculpted shape, no strands.
+
+CLOTHING: Sculpt only the overall silhouette of each garment (shirt, pants, dress, jacket) as smooth, solid, block-colored moulded plastic surfaces with no graphics, logos, prints, checks, stripes, or fabric weave. Each garment is one solid uniform color from your 4-color palette.
+
+SUBJECT FIDELITY:
+- Faithfully preserve the exact person (or people) from the reference photo: match their face, gender, skin tone, eye expression, and likeness.
+- If multiple people are in the photo, sculpt all of them standing together on the shared base.
 
 ${style.sculptingGuide}
 
@@ -148,7 +130,7 @@ BASE / PEDESTAL:
 - Keep the base smooth and blank with no text or letters, unless custom engraving text is explicitly specified below.`.trim();
 
   if (customPrompt && typeof customPrompt === "string" && customPrompt.trim()) {
-    if (customPrompt.includes("3D-printable") && customPrompt.includes("CRITICAL SUBJECT")) {
+    if (customPrompt.includes("3D-printable") && (customPrompt.includes("SOLID-COLOR SCULPT") || customPrompt.includes("CRITICAL SUBJECT"))) {
       return customPrompt.trim();
     }
     return `${basePrompt}\n\n### Customer Personalization & Custom Details:\n${customPrompt.trim()}`;
