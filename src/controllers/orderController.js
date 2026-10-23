@@ -148,7 +148,11 @@ export const trackOrder = async (req, res) => {
 
   // Construct timeline step info
   const statusSteps = [
-    { key: "confirmed", label: "Order Confirmed", desc: "Payment verified and order booked" },
+    {
+      key: "confirmed",
+      label: "Order Confirmed",
+      desc: order.paymentMethod === "cod" ? "Cash on Delivery — pay upon arrival" : "Payment verified and order booked",
+    },
     { key: "processing", label: "Artisan Crafting & Printing", desc: "Your bespoke keepsake is being hand-finished" },
     { key: "ready", label: "Ready for Dispatch", desc: "Quality checked and luxury ribbon boxed" },
     { key: "shipped", label: "Packed & In Transit", desc: "Dispatched with luxury ribbon packaging" },

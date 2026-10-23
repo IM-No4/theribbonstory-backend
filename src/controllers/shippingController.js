@@ -71,9 +71,20 @@ export const trackOrderShipment = async (req, res) => {
       return res.status(404).json({ message: "No active shipment found with the provided identifier" });
     }
 
+    const isCod = order?.paymentMethod === "cod";
+    const isPaid = Boolean(order?.isPaid);
+
     // Build timeline milestones
     const statusSteps = [
-      { key: "confirmed", label: "Order Confirmed", desc: "Payment verified & order booked" },
+      {
+        key: "confirmed",
+        label: "Order Confirmed",
+        desc: isCod
+          ? "Cash on Delivery — pay upon arrival"
+          : isPaid
+          ? "Payment verified & order booked"
+          : "Order placed & queued in studio",
+      },
       { key: "processing", label: "Handcrafted in Studio", desc: "Artisans 3D printing & hand-painting" },
       { key: "ready", label: "Quality Check & Ribbon Box", desc: "Sealed in protective velvet packaging" },
       { key: "shipped", label: "Dispatched via Express Courier", desc: "Handed over to courier partner" },
@@ -93,6 +104,7 @@ export const trackOrderShipment = async (req, res) => {
     if (order) {
       const formatTime = (date) =>
         new Date(date).toLocaleString("en-IN", {
+          timeZone: "Asia/Kolkata",
           day: "2-digit",
           month: "2-digit",
           year: "numeric",
@@ -106,7 +118,11 @@ export const trackOrderShipment = async (req, res) => {
       if (order.createdAt) {
         activities.push({
           status: "CONFIRMED",
-          activity: "Order Confirmed & Payment Verified",
+          activity: isCod
+            ? "Order Confirmed (Cash on Delivery)"
+            : isPaid
+            ? "Order Confirmed & Payment Verified"
+            : "Order Confirmed",
           location: "The Ribbon Story Studio",
           date: formatTime(order.createdAt),
         });
@@ -173,6 +189,8 @@ export const trackOrderShipment = async (req, res) => {
             shortId: order._id.toString().slice(-6).toUpperCase(),
             createdAt: order.createdAt,
             status: order.status,
+            paymentMethod: order.paymentMethod,
+            isPaid: Boolean(order.isPaid),
             currentStep,
             statusSteps,
             activities,
@@ -181,19 +199,25 @@ export const trackOrderShipment = async (req, res) => {
             awbCode: order.awbCode || "",
             estimatedDelivery: order.estimatedDelivery,
             deliverySlot: order.deliverySlot,
-            // Public endpoint: never expose street address or phone number
             shippingAddress: {
               name: order.shippingAddress?.name,
+              line1: order.shippingAddress?.line1 || "",
               city: order.shippingAddress?.city,
               state: order.shippingAddress?.state,
               postalCode: order.shippingAddress?.postalCode,
             },
+            itemsPrice: order.itemsPrice ?? order.totalPrice,
+            shippingPrice: order.shippingPrice ?? 0,
+            discountPrice: order.discountPrice ?? 0,
             totalPrice: order.totalPrice,
             items: (order.items || []).map((i) => ({
               name: i.name,
               image: i.image,
               quantity: i.quantity,
               price: i.price,
+              size: i.customization?.size || i.size || "",
+              color: i.customization?.color || i.color || "",
+              customization: i.customization,
             })),
           }
         : null,
