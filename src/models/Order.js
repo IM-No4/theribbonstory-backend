@@ -98,13 +98,13 @@ const orderSchema = new mongoose.Schema(
       default: "confirmed",
     },
     trackingNumber: { type: String, default: "" },
-    courierPartner: { type: String, default: "BlueDart Express (Shiprocket)" },
+    courierPartner: { type: String, default: "Express Delivery" },
     estimatedDelivery: { type: Date },
     // Shiprocket Logistics Fields
     shiprocketOrderId: { type: String, default: "" },
     shiprocketShipmentId: { type: String, default: "" },
     awbCode: { type: String, default: "" },
-    courierName: { type: String, default: "BlueDart Express" },
+    courierName: { type: String, default: "Express Delivery" },
     shippingLabelUrl: { type: String, default: "" },
     shipmentStatus: { type: String, default: "PENDING" },
     // Refund & Cancellation Fields

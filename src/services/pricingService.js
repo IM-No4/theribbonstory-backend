@@ -1,5 +1,6 @@
 import Product from "../models/Product.js";
 import Coupon from "../models/Coupon.js";
+import KeepsakeCategory from "../models/KeepsakeCategory.js";
 import { isObjectId } from "../utils/security.js";
 
 /**
@@ -97,6 +98,12 @@ export const computeOrderPricing = async ({ items, couponCode, deliverySlot }) =
     .filter(isObjectId);
   const products = await Product.find({ _id: { $in: productIds } });
   const productMap = new Map(products.map((p) => [String(p._id), p]));
+  let keepsakeCategories = [];
+  try {
+    keepsakeCategories = (await KeepsakeCategory.find({}).lean()) || [];
+  } catch {
+    keepsakeCategories = [];
+  }
   const customProduct =
     (await Product.findOne({ $or: [{ slug: "custom-3d-miniature-figurine" }, { isCustomizable: true }] })) ||
     (await Product.findOne());
@@ -123,8 +130,53 @@ export const computeOrderPricing = async ({ items, couponCode, deliverySlot }) =
       }
       unitPrice = box + keepsake + addons.reduce((sum, a) => sum + HAMPER_CATALOG.addons[a], 0);
       selectedOptions = sanitizeOptions(item.selectedOptions);
-    } else if (item?.sizeId) {
-      unitPrice = KEEPSAKE_SIZE_PRICES[item.sizeId];
+    } else if (item?.sizeId || item?.customization?.size || item?.customization?.categorySlug || rawId.startsWith("custom-3d-")) {
+      const rawSize = String(item.sizeId || item.customization?.size || "").trim();
+      const rawLower = rawSize.toLowerCase();
+
+      // 1. Direct match in static KEEPSAKE_SIZE_PRICES dictionary
+      if (item.sizeId && KEEPSAKE_SIZE_PRICES[item.sizeId] !== undefined) {
+        unitPrice = KEEPSAKE_SIZE_PRICES[item.sizeId];
+      } else if (KEEPSAKE_SIZE_PRICES[rawLower] !== undefined) {
+        unitPrice = KEEPSAKE_SIZE_PRICES[rawLower];
+      }
+
+      // 2. Dynamic lookup in KeepsakeCategory database pricing options
+      if (unitPrice === undefined && keepsakeCategories.length > 0) {
+        const targetId = String(item.sizeId || "");
+        const targetName = String(item.customization?.size || item.sizeId || "").toLowerCase().trim();
+        const targetDim = String(item.customization?.dimensions || "").toLowerCase().trim();
+
+        for (const cat of keepsakeCategories) {
+          if (!cat.pricingOptions) continue;
+          for (const opt of cat.pricingOptions) {
+            const optId = String(opt._id);
+            const optName = String(opt.name || "").toLowerCase().trim();
+            const optDim = String(opt.dimensions || "").toLowerCase().trim();
+
+            if (
+              (targetId && targetId === optId) ||
+              (targetName && (targetName === optName || targetName.includes(optName) || optName.includes(targetName))) ||
+              (targetDim && optDim && targetDim === optDim)
+            ) {
+              unitPrice = opt.price;
+              break;
+            }
+          }
+          if (unitPrice !== undefined) break;
+        }
+      }
+
+      // 3. Fallback: fuzzy match against standard tier names & dimensions
+      if (unitPrice === undefined) {
+        if (rawLower.includes("small") || rawLower.includes("mini") || rawLower.includes("3.5")) unitPrice = 699;
+        else if (rawLower.includes("medium") || rawLower.includes("classic") || rawLower.includes("5.5") || rawLower.includes("studio")) unitPrice = 1299;
+        else if (rawLower.includes("large") || rawLower.includes("grand") || rawLower.includes("7.5") || rawLower.includes("collector")) unitPrice = 2199;
+        else if (typeof item.price === "number" && item.price >= 299 && item.price <= 50000) {
+          unitPrice = Math.round(item.price);
+        }
+      }
+
       if (unitPrice === undefined) throw new PricingError("Invalid keepsake size selected");
       selectedOptions = sanitizeOptions(item.selectedOptions);
     } else if (product && product.isActive !== false && rawId.length === 24) {

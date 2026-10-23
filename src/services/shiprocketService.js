@@ -92,7 +92,7 @@ export const checkServiceability = async ({
       codAvailable: true,
       recommendedCourier: {
         courier_company_id: 1,
-        courier_name: isMetro ? "BlueDart Air Express" : "Delhivery Surface Express",
+        courier_name: isMetro ? "Air Express Delivery" : "Surface Express Delivery",
         rate: isMetro ? 65 : 85,
         estimated_delivery_days: transitDays,
         etd: edd.toISOString(),
@@ -100,7 +100,7 @@ export const checkServiceability = async ({
       availableCouriers: [
         {
           id: 1,
-          name: "BlueDart Air Express",
+          name: "Air Express Delivery",
           mode: "Air",
           rating: 4.8,
           rate: 65,
@@ -109,7 +109,7 @@ export const checkServiceability = async ({
         },
         {
           id: 2,
-          name: "Delhivery Surface",
+          name: "Standard Surface Delivery",
           mode: "Surface",
           rating: 4.6,
           rate: 49,
@@ -199,7 +199,7 @@ export const checkServiceability = async ({
       day: "numeric",
     }),
     recommendedCourier: {
-      courier_name: "BlueDart Express",
+      courier_name: "Express Courier",
       rate: 70,
     },
   };
@@ -223,7 +223,7 @@ export const createShiprocketOrder = async (order) => {
       order_id: mockOrderId,
       shipment_id: mockShipmentId,
       awb_code: mockAwb,
-      courier_name: "BlueDart Express (Air)",
+      courier_name: "Express Air Delivery",
       label_url: `https://shiprocket.co/assets/mock_label_${shortId}.pdf`,
       status: "AWB_ASSIGNED",
     };
@@ -277,7 +277,7 @@ export const createShiprocketOrder = async (order) => {
         order_id: data.order_id,
         shipment_id: data.shipment_id,
         awb_code: data.awb_code || "",
-        courier_name: data.courier_name || "BlueDart Express",
+        courier_name: data.courier_name || "Express Courier",
       };
     }
   } catch (err) {
@@ -290,7 +290,7 @@ export const createShiprocketOrder = async (order) => {
     order_id: Math.floor(1000000 + Math.random() * 9000000),
     shipment_id: Math.floor(10000000 + Math.random() * 90000000),
     awb_code: `SR${Math.floor(100000000 + Math.random() * 900000000)}IN`,
-    courier_name: "BlueDart Express",
+    courier_name: "Express Courier",
   };
 };
 
@@ -304,7 +304,7 @@ export const generateAWB = async (shipmentId, courierId) => {
     return {
       success: true,
       awb_code: `SR${Math.floor(100000000 + Math.random() * 900000000)}IN`,
-      courier_name: "BlueDart Express (Air)",
+      courier_name: "Express Air Delivery",
       status: "AWB_ASSIGNED",
     };
   }
@@ -338,7 +338,7 @@ export const generateAWB = async (shipmentId, courierId) => {
   return {
     success: true,
     awb_code: `SR${Math.floor(100000000 + Math.random() * 900000000)}IN`,
-    courier_name: "BlueDart Express",
+    courier_name: "Express Courier",
   };
 };
 
@@ -405,7 +405,7 @@ export const trackShipment = async (awbOrOrderId) => {
           {
             id: 1,
             awb_code: cleanQuery.startsWith("SR") ? cleanQuery : `SR${cleanQuery.slice(-6)}IN`,
-            courier_name: "BlueDart Air Express (Shiprocket)",
+            courier_name: "Express Air Delivery",
             current_status: "In Transit — Reached Local Fulfillment Hub",
             destination: "Customer Destination Hub",
             origin: "The Ribbon Story Artisan Studio (Bengaluru)",
@@ -422,7 +422,7 @@ export const trackShipment = async (awbOrOrderId) => {
           {
             date: pickupDate.toLocaleString("en-IN"),
             status: "PICKED_UP",
-            activity: "Handcrafted package picked up by BlueDart Express Courier",
+            activity: "Handcrafted package picked up by Express Courier",
             location: "The Ribbon Story Studio, Bengaluru",
           },
           {

@@ -405,7 +405,7 @@ export const sendRefundNotificationEmail = async ({ order, userEmail, refundAmou
       <div style="background-color: #FAF5F2; border: 1px solid #F3D9DC; border-radius: 16px; padding: 18px; margin: 20px 0; font-size: 13px;">
         <p style="margin: 0 0 6px 0;"><strong>Refund Reference ID:</strong> <code style="font-family: monospace; color: #4A1F29;">${refundId || order.refundId || "rfnd_processed"}</code></p>
         <p style="margin: 0 0 6px 0;"><strong>Reason:</strong> ${esc(reason || order.refundReason || "Customer cancellation / adjustment")}</p>
-        <p style="margin: 0;"><strong>Payment Method:</strong> ${order.paymentMethod === "razorpay" ? "Razorpay Gateway (UPI / Card / NetBanking)" : "Store / Bank Transfer"}</p>
+        <p style="margin: 0;"><strong>Payment Method:</strong> ${order.paymentMethod === "razorpay" ? "Online Payment (UPI / Card / NetBanking)" : "Store / Bank Transfer"}</p>
       </div>
 
       <p style="font-size: 13px; color: #664B52;">

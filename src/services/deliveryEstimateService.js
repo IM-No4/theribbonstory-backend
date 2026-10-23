@@ -197,7 +197,7 @@ export async function calculateDeliveryEstimate({
       explanation: hasCustom3D
         ? `Includes custom 3D studio printing (${slotsLeftText.toLowerCase()}), ${customUnits} keepsake print time, and courier transit.`
         : `Ready-to-ship order. Dispatched within 24h via courier.`,
-      courierName: isMetro ? "BlueDart Express" : "Delhivery Surface",
+      courierName: "Standard Courier Delivery",
       fee: STANDARD_SHIPPING_FEE,
     },
     express: {
@@ -210,14 +210,14 @@ export async function calculateDeliveryEstimate({
         ? `${expressQueueDays}d priority queue + ${expressProdDays}d printing + ${courierDaysExpress}d Air transit`
         : `Same-day dispatch + ${courierDaysExpress}d Air transit`,
       explanation: hasCustom3D
-        ? `⚡ Priority Queue: Jumps ahead of standard orders to print next on our single studio printer + prioritized BlueDart Air Express.`
-        : `Priority dispatch via BlueDart Air Express.`,
-      courierName: "BlueDart Air Express (Priority)",
+        ? `⚡ Priority Queue: Jumps ahead of standard orders to print next on our single studio printer + prioritized Air Express.`
+        : `Priority dispatch via Air Express.`,
+      courierName: "Priority Air Delivery",
       priorityFee: EXPRESS_PRIORITY_FEE,
       totalFee: STANDARD_SHIPPING_FEE + EXPRESS_PRIORITY_FEE,
     },
     recommendedCourier: shiprocketResult?.recommendedCourier || {
-      courier_name: isMetro ? "BlueDart Air Express" : "Delhivery Surface",
+      courier_name: "Express Air Delivery",
       rate: STANDARD_SHIPPING_FEE,
     },
   };
