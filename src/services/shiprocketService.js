@@ -389,49 +389,22 @@ export const trackShipment = async (awbOrOrderId) => {
   const token = await getShiprocketToken();
   const cleanQuery = String(awbOrOrderId).trim();
 
-  // If mock mode, return authentic tracking event sequence
-  if (token.startsWith("mock_") || cleanQuery.startsWith("TRS-") || cleanQuery.startsWith("SR")) {
-    const now = new Date();
-    const orderDate = new Date(now.getTime() - 24 * 60 * 60 * 1000);
-    const pickupDate = new Date(now.getTime() - 12 * 60 * 60 * 1000);
-    const transitDate = new Date(now.getTime() - 4 * 60 * 60 * 1000);
-
+  // In mock mode or before carrier pickup, return clean manifest status without fake past checkpoints
+  if (token.startsWith("mock_")) {
     return {
       success: true,
       tracking_data: {
         track_status: 1,
-        shipment_status: "IN_TRANSIT",
+        shipment_status: "MANIFEST_GENERATED",
         shipment_track: [
           {
             id: 1,
-            awb_code: cleanQuery.startsWith("SR") ? cleanQuery : `SR${cleanQuery.slice(-6)}IN`,
-            courier_name: "Express Air Delivery",
-            current_status: "In Transit — Reached Local Fulfillment Hub",
-            destination: "Customer Destination Hub",
-            origin: "The Ribbon Story Artisan Studio (Bengaluru)",
-            edd: new Date(now.getTime() + 24 * 60 * 60 * 1000).toISOString(),
+            awb_code: cleanQuery,
+            courier_name: "Express Delivery",
+            current_status: "Package manifest generated — awaiting carrier pickup scan",
           },
         ],
-        shipment_track_activities: [
-          {
-            date: transitDate.toLocaleString("en-IN"),
-            status: "IN_TRANSIT",
-            activity: "Shipment in transit - Arrived at regional sorting facility",
-            location: "Regional Logistics Hub",
-          },
-          {
-            date: pickupDate.toLocaleString("en-IN"),
-            status: "PICKED_UP",
-            activity: "Handcrafted package picked up by Express Courier",
-            location: "The Ribbon Story Studio, Bengaluru",
-          },
-          {
-            date: orderDate.toLocaleString("en-IN"),
-            status: "MANIFEST_GENERATED",
-            activity: "Shipping label printed and package ready for dispatch",
-            location: "The Ribbon Story Fulfillment Center",
-          },
-        ],
+        shipment_track_activities: [],
       },
     };
   }

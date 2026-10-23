@@ -53,9 +53,19 @@ export const trackOrderShipment = async (req, res) => {
   try {
     const order = await findOrderByPublicIdentifier(cleanId);
 
-    // Call Shiprocket tracking
-    const trackingQuery = order?.awbCode || order?.trackingNumber || cleanId;
-    const shiprocketData = await trackShiprocketShipment(trackingQuery);
+    // Only fetch courier tracking if the order has actually been dispatched/delivered
+    let shiprocketData = null;
+    if (order) {
+      if (order.status === "shipped" || order.status === "delivered") {
+        const trackingQuery = order.awbCode || (order.trackingNumber && !order.trackingNumber.startsWith("TRS-") ? order.trackingNumber : null);
+        if (trackingQuery) {
+          shiprocketData = await trackShiprocketShipment(trackingQuery);
+        }
+      }
+    } else {
+      // Direct lookup by AWB number if no order matched
+      shiprocketData = await trackShiprocketShipment(cleanId);
+    }
 
     if (!order && !shiprocketData?.success) {
       return res.status(404).json({ message: "No active shipment found with the provided identifier" });
@@ -64,10 +74,10 @@ export const trackOrderShipment = async (req, res) => {
     // Build timeline milestones
     const statusSteps = [
       { key: "confirmed", label: "Order Confirmed", desc: "Payment verified & order booked" },
-      { key: "processing", label: "Artisan Crafting", desc: "Your 3D keepsake is being handcrafted" },
-      { key: "ready", label: "Ready for Dispatch", desc: "Quality checked & wrapped in luxury box" },
-      { key: "shipped", label: "Handed to Shiprocket", desc: "Packed in satin ribbon box & dispatched" },
-      { key: "delivered", label: "Delivered", desc: "Safely received & unwrapped" },
+      { key: "processing", label: "Handcrafted in Studio", desc: "Artisans 3D printing & hand-painting" },
+      { key: "ready", label: "Quality Check & Ribbon Box", desc: "Sealed in protective velvet packaging" },
+      { key: "shipped", label: "Dispatched via Express Courier", desc: "Handed over to courier partner" },
+      { key: "delivered", label: "Delivered", desc: "Safely received at your doorstep" },
     ];
 
     let currentStep = 1;
@@ -77,6 +87,83 @@ export const trackOrderShipment = async (req, res) => {
     else if (currentStatus === "shipped") currentStep = 4;
     else if (currentStatus === "delivered") currentStep = 5;
     else if (currentStatus === "cancelled") currentStep = 0;
+
+    // Build authentic, real-time activity checkpoints from the order's actual lifecycle
+    const activities = [];
+    if (order) {
+      const formatTime = (date) =>
+        new Date(date).toLocaleString("en-IN", {
+          day: "2-digit",
+          month: "2-digit",
+          year: "numeric",
+          hour: "2-digit",
+          minute: "2-digit",
+          second: "2-digit",
+          hour12: true,
+        });
+
+      // 1. Confirmed
+      if (order.createdAt) {
+        activities.push({
+          status: "CONFIRMED",
+          activity: "Order Confirmed & Payment Verified",
+          location: "The Ribbon Story Studio",
+          date: formatTime(order.createdAt),
+        });
+      }
+
+      // 2. Processing (in studio crafting)
+      if (["processing", "ready", "shipped", "delivered"].includes(order.status)) {
+        activities.unshift({
+          status: "PROCESSING",
+          activity: "Handcrafted in Studio — Artisans 3D printing & hand-painting",
+          location: "The Ribbon Story Studio",
+          date: formatTime(order.updatedAt || order.createdAt),
+        });
+      }
+
+      // 3. Ready (boxed in velvet ribbon box)
+      if (["ready", "shipped", "delivered"].includes(order.status)) {
+        activities.unshift({
+          status: "READY",
+          activity: "Quality Check & Ribbon Box — Sealed in protective velvet packaging",
+          location: "The Ribbon Story Fulfillment Center",
+          date: formatTime(order.updatedAt || order.createdAt),
+        });
+      }
+
+      // 4. Shipped (dispatched to carrier)
+      if (["shipped", "delivered"].includes(order.status)) {
+        const courier = order.courierName || order.courierPartner || "Express Courier";
+        activities.unshift({
+          status: "SHIPPED",
+          activity: `Dispatched via ${courier} — Handed over to courier partner`,
+          location: "The Ribbon Story Fulfillment Center",
+          date: formatTime(order.notifications?.shippedAt || order.updatedAt || order.createdAt),
+        });
+      }
+
+      // 5. Delivered
+      if (order.status === "delivered") {
+        const dest = [order.shippingAddress?.city, order.shippingAddress?.state].filter(Boolean).join(", ");
+        activities.unshift({
+          status: "DELIVERED",
+          activity: "Delivered — Safely received at your doorstep",
+          location: dest || "Destination",
+          date: formatTime(order.notifications?.deliveredAt || order.updatedAt || order.createdAt),
+        });
+      }
+
+      // Cancelled
+      if (order.status === "cancelled") {
+        activities.unshift({
+          status: "CANCELLED",
+          activity: `Order Cancelled${order.cancellationReason ? `: ${order.cancellationReason}` : ""}`,
+          location: "The Ribbon Story Studio",
+          date: formatTime(order.cancelledAt || order.updatedAt || order.createdAt),
+        });
+      }
+    }
 
     return res.json({
       success: true,
@@ -88,9 +175,10 @@ export const trackOrderShipment = async (req, res) => {
             status: order.status,
             currentStep,
             statusSteps,
-            courierPartner: order.courierName || order.courierPartner || "BlueDart Express (Shiprocket)",
+            activities,
+            courierPartner: order.courierName || order.courierPartner || "Express Delivery",
             trackingNumber: order.awbCode || order.trackingNumber,
-            awbCode: order.awbCode,
+            awbCode: order.awbCode || "",
             estimatedDelivery: order.estimatedDelivery,
             deliverySlot: order.deliverySlot,
             // Public endpoint: never expose street address or phone number
