@@ -8,7 +8,7 @@
     "start": "node src/server.js",
     "dev": "node --watch-path=src src/server.js",
     "set-admin": "node src/scripts/setAdminPassword.js",
-    "test": "node --test test/*.test.js"
+    "test": "node --test test/"
   },
   "dependencies": {
     "@google/genai": "^2.24.0",

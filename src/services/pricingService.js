@@ -1,3 +1,4 @@
+import mongoose from "mongoose";
 import Product from "../models/Product.js";
 import Coupon from "../models/Coupon.js";
 import KeepsakeCategory from "../models/KeepsakeCategory.js";
@@ -118,7 +119,22 @@ export const computeOrderPricing = async ({ items, couponCode, deliverySlot }) =
     const product = productMap.get(rawId.slice(0, 24));
     let unitPrice;
     let selectedOptions;
+    const isCustom = Boolean(
+      item?.hamper ||
+      item?.sizeId ||
+      item?.customization?.size ||
+      item?.customization?.categorySlug ||
+      rawId.startsWith("custom-3d-") ||
+      item?.customization?.photoUrl
+    );
     let linkedProduct = product || customProduct;
+    if (!linkedProduct && isCustom) {
+      linkedProduct = {
+        _id: new mongoose.Types.ObjectId("660000000000000000000001"),
+        name: String(item?.name || "Custom 3D Keepsake Figurine").slice(0, 200),
+        images: ["/images/chibi-showcase.webp"],
+      };
+    }
 
     if (item?.hamper) {
       const { boxId, keepsakeId, addonIds } = item.hamper;
@@ -189,13 +205,17 @@ export const computeOrderPricing = async ({ items, couponCode, deliverySlot }) =
       );
     }
 
-    if (!linkedProduct) throw new PricingError("Catalog is not available");
+    if (!linkedProduct) {
+      throw new PricingError(
+        "One of the items in your cart is no longer available. Please remove it and add it again."
+      );
+    }
 
     return {
       product: linkedProduct._id,
       fromCatalog: Boolean(product),
-      name: String(item.name || product?.name || "Custom 3D Keepsake").slice(0, 200),
-      image: item.image || item.customization?.photoUrl || linkedProduct.images?.[0],
+      name: String(item.name || product?.name || (isCustom ? "Custom 3D Keepsake" : "Product")).slice(0, 200),
+      image: item.image || item.customization?.photoUrl || linkedProduct.images?.[0] || "/images/chibi-showcase.webp",
       price: unitPrice,
       quantity,
       selectedOptions,

@@ -2,7 +2,7 @@ import mongoose from "mongoose";
 
 const orderItemSchema = new mongoose.Schema(
   {
-    product: { type: mongoose.Schema.Types.ObjectId, ref: "Product", required: true },
+    product: { type: mongoose.Schema.Types.ObjectId, ref: "Product", required: false },
     // true when `product` is the catalog product the customer chose (false for
     // hampers/keepsakes linked to a placeholder product)
     fromCatalog: { type: Boolean },

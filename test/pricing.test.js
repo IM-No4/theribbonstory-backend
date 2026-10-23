@@ -142,6 +142,25 @@ describe("computeOrderPricing", () => {
     await assert.rejects(computeOrderPricing({ items: [] }), /empty/);
   });
 
+  it("prices custom keepsakes gracefully when the catalog is completely empty", async () => {
+    mock.restoreAll();
+    mock.method(Product, "find", () => query([]));
+    mock.method(Product, "findOne", () => query(null));
+    const pricing = await computeOrderPricing({
+      items: [
+        {
+          productId: "custom-3d-single-12345",
+          sizeId: "mini",
+          name: "Custom 3D Keepsake (Single - Small Desk 3.5\" (9 cm))",
+          quantity: 1,
+        },
+      ],
+    });
+    assert.equal(pricing.itemsPrice, 699);
+    assert.equal(pricing.orderItems[0].fromCatalog, false);
+    assert.ok(pricing.orderItems[0].product);
+  });
+
   it("errors carry a 400 status for the error handler", async () => {
     await assert.rejects(computeOrderPricing({ items: [] }), (err) => err.statusCode === 400);
   });
