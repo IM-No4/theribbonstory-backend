@@ -130,7 +130,7 @@ export const renderInvoicePdf = (order) =>
     doc.fillColor(accent).font("Helvetica-Bold").fontSize(18).text(seller.gstin ? "TAX INVOICE" : "INVOICE", left, 40);
     doc.fillColor(ink).fontSize(12).text(seller.name, left, 66);
     doc.font("Helvetica").fontSize(9).fillColor(muted);
-    const sellerLines = [seller.address, seller.state && `State: ${seller.state}`, seller.gstin ? `GSTIN: ${seller.gstin}` : "Not registered under GST", [seller.email, seller.phone].filter(Boolean).join(" · ")].filter(Boolean);
+    const sellerLines = [seller.address, seller.state && `State: ${seller.state}`, seller.gstin ? `GSTIN: ${seller.gstin}` : null, [seller.email, seller.phone].filter(Boolean).join(" · ")].filter(Boolean);
     doc.text(sellerLines.join("\n"), left, 82, { width: 280 });
 
     const metaX = 340;

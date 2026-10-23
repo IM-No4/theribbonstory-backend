@@ -25,6 +25,7 @@ const studioSettingsSchema = new mongoose.Schema(
       },
     ],
     maxColorsPerModel: { type: Number, default: 4 },
+    orderNotificationEmails: [{ type: String, trim: true, lowercase: true }],
   },
   { timestamps: true }
 );

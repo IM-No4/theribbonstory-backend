@@ -1,4 +1,5 @@
 import Product from "../models/Product.js";
+import StudioSettings from "../models/StudioSettings.js";
 import { getTransporter, EMAIL_SENDERS } from "./emailService.js";
 import { escapeHtml as esc } from "../utils/security.js";
 import { absoluteImageUrl } from "../routes/seoRoutes.js";
@@ -9,11 +10,24 @@ import { absoluteImageUrl } from "../routes/seoRoutes.js";
  * a mail failure is logged and never affects the customer's request.
  */
 
-export const getStudioRecipients = () =>
-  (process.env.STUDIO_ALERT_EMAIL || process.env.ADMIN_EMAIL || "contact@theribbonstory.com")
+export const getStudioRecipients = async () => {
+  try {
+    const settings = await StudioSettings.findOne({ key: "default" }).lean();
+    if (Array.isArray(settings?.orderNotificationEmails) && settings.orderNotificationEmails.length > 0) {
+      const list = settings.orderNotificationEmails
+        .map((s) => String(s || "").trim().toLowerCase())
+        .filter((s) => /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(s));
+      if (list.length > 0) return list;
+    }
+  } catch (err) {
+    console.error("[StudioAlerts] Error reading recipient settings:", err.message);
+  }
+
+  return (process.env.STUDIO_ALERT_EMAIL || process.env.ADMIN_EMAIL || "contact@theribbonstory.com")
     .split(",")
-    .map((s) => s.trim())
-    .filter(Boolean);
+    .map((s) => s.trim().toLowerCase())
+    .filter((e) => /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(e));
+};
 
 export const getLowStockThreshold = () => {
   const n = Number(process.env.LOW_STOCK_THRESHOLD);
@@ -25,8 +39,8 @@ const shortId = (order) => `#${String(order._id).slice(-6).toUpperCase()}`;
 const rupees = (n) => `₹${Number(n || 0).toLocaleString("en-IN")}`;
 
 const send = async ({ subject, html, text }) => {
-  const to = getStudioRecipients();
-  if (to.length === 0) return;
+  const to = await getStudioRecipients();
+  if (!to || to.length === 0) return;
   try {
     await getTransporter("NOREPLY").sendMail({ from: EMAIL_SENDERS.NOREPLY, to: to.join(", "), subject, html, text });
   } catch (err) {
@@ -169,4 +183,73 @@ export const checkLowStock = async (items) => {
   } catch (err) {
     console.error("[StudioAlerts] Low-stock check failed:", err.message);
   }
+};
+
+/**
+ * Send a sample order notification to verify configured studio recipient email(s).
+ */
+export const sendTestOrderAlert = async (targetEmails) => {
+  const to = Array.isArray(targetEmails) && targetEmails.length > 0
+    ? targetEmails.filter((s) => /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(s))
+    : await getStudioRecipients();
+
+  if (!to || to.length === 0) {
+    throw new Error("No valid recipient email address configured");
+  }
+
+  const sampleOrder = {
+    _id: "66e000000000000000000099",
+    paymentMethod: "cod",
+    totalPrice: 699,
+    createdAt: new Date(),
+    deliverySlot: "Standard Delivery (3-5 Days)",
+    user: { name: "Amrit Patel", email: "customer@example.com" },
+    shippingAddress: {
+      name: "Amrit Patel",
+      phone: "+91 9799527504",
+      line1: "Innvoll, 8th Floor, Bestech Business Tower",
+      city: "Gurgaon",
+      state: "Haryana",
+      postalCode: "122018",
+    },
+    items: [
+      {
+        name: "Custom 3D Keepsake (Single - Small Desk 3.5\" (9 cm))",
+        quantity: 1,
+        price: 699,
+        customization: {
+          category: "Single",
+          size: "Small Desk 3.5\" (9 cm)",
+          note: "Make sure the figurine has a friendly smiling expression!",
+          customName: "The Ribbon Story Team",
+        },
+      },
+    ],
+    giftOptions: {
+      isGift: true,
+      ribbonColor: "Classic Crimson",
+      giftMessage: "Welcome to The Ribbon Story atelier!",
+    },
+  };
+
+  const html = wrap(
+    `[TEST NOTIFICATION] Sample order #${String(sampleOrder._id).slice(-6).toUpperCase()} — ${rupees(sampleOrder.totalPrice)} (cash on delivery)`,
+    `<div style="background:#FEF3C7;color:#92400E;padding:10px 14px;border-radius:8px;margin-bottom:14px;font-size:12px;border:1px solid #FCD34D">
+      <strong>⚠️ Test notification from The Ribbon Story Admin Panel:</strong> If you received this email, new order alerts are working and will be delivered to this inbox automatically whenever a customer places an order!
+    </div>
+    ${customerBlock(sampleOrder)}
+    ${itemsTable(sampleOrder)}
+    <p style="font-size:13px"><strong>Total:</strong> ${rupees(sampleOrder.totalPrice)} · <strong>Delivery:</strong> Standard</p>
+    <p style="font-size:13px"><strong>🎁 Gift</strong>: “Welcome to The Ribbon Story atelier!”</p>`
+  );
+
+  await getTransporter("NOREPLY").sendMail({
+    from: EMAIL_SENDERS.NOREPLY,
+    to: to.join(", "),
+    subject: `🧪 [TEST] New Order Notification Alert for The Ribbon Story`,
+    html,
+    text: `Test new order notification from The Ribbon Story Admin Panel.\nConfigured recipients: ${to.join(", ")}`,
+  });
+
+  return { ok: true, recipients: to };
 };
