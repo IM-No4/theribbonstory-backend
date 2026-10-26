@@ -179,6 +179,8 @@ export const trackOrder = async (req, res) => {
       id: order._id,
       orderNumber: `#${order._id.toString().slice(-6).toUpperCase()}`,
       status: order.status,
+      cancellationReason: order.cancellationReason || "",
+      cancelledAt: order.cancelledAt || null,
       currentStep,
       statusSteps,
       createdAt: order.createdAt,
@@ -195,7 +197,7 @@ export const trackOrder = async (req, res) => {
       },
       trackingNumber: order.trackingNumber || `TRS-EXP-${order._id.toString().slice(-6).toUpperCase()}`,
       courierPartner: order.courierPartner || "BlueDart Express",
-      estimatedDelivery: order.estimatedDelivery || new Date(Date.now() + 4 * 24 * 60 * 60 * 1000),
+      estimatedDelivery: order.status === "cancelled" ? null : (order.estimatedDelivery || new Date(Date.now() + 4 * 24 * 60 * 60 * 1000)),
     },
   });
 };

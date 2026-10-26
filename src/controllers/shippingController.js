@@ -191,6 +191,8 @@ export const trackOrderShipment = async (req, res) => {
             shortId: order._id.toString().slice(-6).toUpperCase(),
             createdAt: order.createdAt,
             status: order.status,
+            cancellationReason: order.cancellationReason || "",
+            cancelledAt: order.cancelledAt || null,
             paymentMethod: order.paymentMethod,
             isPaid: Boolean(order.isPaid),
             currentStep,
@@ -199,7 +201,7 @@ export const trackOrderShipment = async (req, res) => {
             courierPartner: order.courierName || order.courierPartner || "Express Delivery",
             trackingNumber: order.awbCode || order.trackingNumber,
             awbCode: order.awbCode || "",
-            estimatedDelivery: order.estimatedDelivery,
+            estimatedDelivery: order.status === "cancelled" ? null : order.estimatedDelivery,
             deliverySlot: order.deliverySlot,
             shippingAddress: {
               name: order.shippingAddress?.name,
