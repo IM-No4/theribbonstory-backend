@@ -65,8 +65,8 @@ describe("computeOrderPricing", () => {
 
   it("charges standard shipping under the free-shipping threshold", async () => {
     const pricing = await computeOrderPricing({ items: [{ productId: PRODUCT_ID, quantity: 1 }] });
-    assert.equal(pricing.shippingPrice, 79);
-    assert.equal(pricing.totalPrice, 579);
+    assert.equal(pricing.shippingPrice, 99);
+    assert.equal(pricing.totalPrice, 599);
   });
 
   it("adds the midnight delivery surcharge", async () => {
@@ -74,7 +74,7 @@ describe("computeOrderPricing", () => {
       items: [{ productId: PRODUCT_ID, quantity: 1 }],
       deliverySlot: "Midnight Surprise (11pm-12am)",
     });
-    assert.equal(pricing.shippingPrice, 79 + 199);
+    assert.equal(pricing.shippingPrice, 99 + 199);
   });
 
   it("applies coupons on the server-computed subtotal", async () => {

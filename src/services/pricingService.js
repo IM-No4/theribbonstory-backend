@@ -27,7 +27,7 @@ export const HAMPER_CATALOG = {
 };
 
 export const FREE_SHIPPING_THRESHOLD = 999;
-export const STANDARD_SHIPPING_FEE = 79;
+export const STANDARD_SHIPPING_FEE = 99;
 export const MIDNIGHT_DELIVERY_FEE = 199;
 export const EXPRESS_PRIORITY_FEE = 199;
 const MAX_QUANTITY = 20;

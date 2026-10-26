@@ -11,7 +11,7 @@ import { razorpayGateway } from "../src/controllers/paymentController.js";
 
 const PRODUCT_ID = new mongoose.Types.ObjectId().toString();
 const address = { name: "A", line1: "1 Road", city: "Mumbai", state: "MH", postalCode: "400001", phone: "9999999999" };
-const cart = [{ productId: PRODUCT_ID, quantity: 1, price: 1 }]; // server total: 500 + 79 shipping = 579
+const cart = [{ productId: PRODUCT_ID, quantity: 1, price: 1 }]; // server total: 500 + 99 shipping = 599
 
 const RZP_SECRET = "test_razorpay_secret";
 const WEBHOOK_SECRET = "test_webhook_secret";
@@ -131,7 +131,7 @@ const webhook = (body, secret = WEBHOOK_SECRET) => {
   const signature = crypto.createHmac("sha256", secret).update(raw).digest("hex");
   return post("/api/payments/razorpay/webhook", raw, { auth: false, headers: { "X-Razorpay-Signature": signature } });
 };
-const capturedEvent = (amount = 57900, orderId = "order_rzp_1", paymentId = "pay_1") => ({
+const capturedEvent = (amount = 59900, orderId = "order_rzp_1", paymentId = "pay_1") => ({
   event: "payment.captured",
   payload: { payment: { entity: { id: paymentId, order_id: orderId, amount, status: "captured" } } },
 });
@@ -151,7 +151,7 @@ describe("Cash on delivery orders", () => {
       shippingPrice: 0,
     });
     assert.equal(res.status, 201);
-    assert.equal(created.totalPrice, 579);
+    assert.equal(created.totalPrice, 599);
     assert.equal(created.discountPrice, 0);
     assert.equal(created.isPaid, false);
     assert.equal(created.stockDeducted, true);
@@ -202,7 +202,7 @@ describe("Online checkout (Razorpay)", () => {
     const res = await post("/api/payments/razorpay/order", { items: cart, shippingAddress: address, amount: 1 });
     assert.equal(res.status, 201);
     const body = await res.json();
-    assert.equal(rzpOrder.amount, 57900);
+    assert.equal(rzpOrder.amount, 59900);
     assert.equal(rzpOrder.notes.orderId, String(body.orderId));
 
     assert.equal(String(created._id), String(body.orderId));
@@ -232,7 +232,7 @@ describe("Online checkout (Razorpay)", () => {
 
   it("browser confirmation marks the order paid and takes stock", async () => {
     const { orderId } = await startCheckout();
-    fakeGateway({ order_id: "order_rzp_1", status: "captured", amount: 57900, currency: "INR" });
+    fakeGateway({ order_id: "order_rzp_1", status: "captured", amount: 59900, currency: "INR" });
     const res = await confirm(orderId);
     assert.equal(res.status, 200);
     const order = orders.get(String(orderId));
@@ -246,7 +246,7 @@ describe("Online checkout (Razorpay)", () => {
 
   it("rejects a forged signature", async () => {
     const { orderId } = await startCheckout();
-    fakeGateway({ order_id: "order_rzp_1", status: "captured", amount: 57900, currency: "INR" });
+    fakeGateway({ order_id: "order_rzp_1", status: "captured", amount: 59900, currency: "INR" });
     const res = await confirm(orderId, { razorpay_signature: "deadbeef" });
     assert.equal(res.status, 400);
     assert.equal(orders.get(String(orderId)).isPaid, false);
@@ -262,7 +262,7 @@ describe("Online checkout (Razorpay)", () => {
 
   it("rejects a payment that has not completed", async () => {
     const { orderId } = await startCheckout();
-    fakeGateway({ order_id: "order_rzp_1", status: "failed", amount: 57900, currency: "INR" });
+    fakeGateway({ order_id: "order_rzp_1", status: "failed", amount: 59900, currency: "INR" });
     const res = await confirm(orderId);
     assert.equal(res.status, 400);
   });
@@ -296,7 +296,7 @@ describe("Razorpay webhook", () => {
   it("is idempotent with browser confirmation: stock and coupon are applied once", async () => {
     const { orderId } = await startCheckout();
     await webhook(capturedEvent());
-    fakeGateway({ order_id: "order_rzp_1", status: "captured", amount: 57900, currency: "INR" });
+    fakeGateway({ order_id: "order_rzp_1", status: "captured", amount: 59900, currency: "INR" });
     const res = await post(`/api/orders/${orderId}/confirm-payment`, {
       razorpay_order_id: "order_rzp_1",
       razorpay_payment_id: "pay_1",
@@ -331,7 +331,7 @@ describe("Razorpay webhook", () => {
   });
 
   it("ignores unknown orders and unrelated events", async () => {
-    let res = await webhook(capturedEvent(57900, "order_unknown"));
+    let res = await webhook(capturedEvent(59900, "order_unknown"));
     assert.equal((await res.json()).matched, false);
     res = await webhook({ event: "refund.created", payload: {} });
     assert.equal((await res.json()).ignored, "refund.created");
@@ -448,7 +448,7 @@ describe("Studio alerts", () => {
     const [mail] = studioMail();
     assert.ok(mail, "studio alert sent");
     assert.equal(mail.to, "studio@example.com, owner@example.com");
-    assert.match(mail.subject, /New order #\w{6} · ₹579 · COD/);
+    assert.match(mail.subject, /New order #\w{6} · ₹599 · COD/);
     assert.match(mail.html, /Magnet/);
     assert.ok(!mail.html.includes("<script>"), "customer input is escaped");
   });
@@ -501,7 +501,7 @@ describe("Studio alerts", () => {
   });
 
   it("flags a payment that could not be matched to an order", async () => {
-    await webhook(capturedEvent(57900, "order_unknown", "pay_orphan"));
+    await webhook(capturedEvent(59900, "order_unknown", "pay_orphan"));
     await settle();
     const [mail] = studioMail();
     assert.match(mail.subject, /Payment needs attention: pay_orphan/);

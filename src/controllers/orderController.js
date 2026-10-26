@@ -10,6 +10,7 @@ import {
   sendConfirmation,
   markOrderPaid,
   startReferencePacks,
+  containsCustomKeepsake,
 } from "../services/orderService.js";
 import { isObjectId } from "../utils/security.js";
 import { alertNewOrder, alertCancellation, checkLowStock } from "../services/studioAlerts.js";
@@ -33,6 +34,13 @@ export const createOrder = async (req, res) => {
   }
 
   const { fields, coupon } = await buildOrderFields(req.body, req.user);
+
+  // Custom keepsake orders cannot use COD: personalized made-to-order figurines are non-resellable
+  if (containsCustomKeepsake(fields.items)) {
+    return res.status(400).json({
+      message: "Cash on Delivery (COD) is not available for custom keepsake orders. Because each 3D keepsake is uniquely handcrafted and personalized from your photograph, only prepaid online payments (UPI, Cards, NetBanking) are accepted.",
+    });
+  }
 
   await reserveStock(fields.items);
   let order;
@@ -268,8 +276,8 @@ export const VALID_STATUS_TRANSITIONS = {
   // (can return to processing if quality check fails and rework is needed)
   ready: ["shipped", "processing", "cancelled"],
 
-  // shipped: handed to courier / Shiprocket in transit; next is delivered
-  shipped: ["delivered"],
+  // shipped: handed to courier / Shiprocket in transit; next is delivered (or ready if re-dispatching)
+  shipped: ["delivered", "ready"],
 
   // delivered: safely received by customer (settled final state)
   delivered: [],
@@ -399,6 +407,12 @@ export const issueOrderRefund = async (req, res) => {
 
   if (order.isRefunded && order.refundStatus === "refunded") {
     return res.status(400).json({ message: "This order has already been refunded" });
+  }
+
+  if (!order.isPaid) {
+    return res.status(400).json({
+      message: "Cannot issue a refund for an unpaid order (Cash on Delivery). You can cancel the order directly.",
+    });
   }
 
   const refundAmt = Number(amount) > 0 ? Number(amount) : order.totalPrice;

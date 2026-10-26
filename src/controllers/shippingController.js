@@ -7,8 +7,10 @@ import {
   generateAWB,
   generateShippingLabel,
   trackShipment as trackShiprocketShipment,
+  getShiprocketOrderDetails,
 } from "../services/shiprocketService.js";
 import { notifyStatusChange } from "../services/orderNotifications.js";
+import { restoreStock } from "../services/orderService.js";
 
 import { calculateDeliveryEstimate } from "../services/deliveryEstimateService.js";
 
@@ -201,7 +203,6 @@ export const trackOrderShipment = async (req, res) => {
             deliverySlot: order.deliverySlot,
             shippingAddress: {
               name: order.shippingAddress?.name,
-              line1: order.shippingAddress?.line1 || "",
               city: order.shippingAddress?.city,
               state: order.shippingAddress?.state,
               postalCode: order.shippingAddress?.postalCode,
@@ -249,8 +250,19 @@ export const createShipment = async (req, res) => {
 
     const previousStatus = order.status;
 
-    // Step 1: Create Order in Shiprocket
-    const srOrderResult = await createShiprocketOrder(order);
+    // Step 1: Create Order in Shiprocket (or reuse if already created)
+    let srOrderResult;
+    if (order.shiprocketOrderId && order.shiprocketShipmentId) {
+      srOrderResult = {
+        order_id: order.shiprocketOrderId,
+        shipment_id: order.shiprocketShipmentId,
+      };
+    } else {
+      srOrderResult = await createShiprocketOrder(order);
+      order.shiprocketOrderId = String(srOrderResult.order_id);
+      order.shiprocketShipmentId = String(srOrderResult.shipment_id);
+      await order.save();
+    }
 
     // Step 2: Generate AWB
     const awbResult = await generateAWB(srOrderResult.shipment_id);
@@ -326,11 +338,11 @@ export const handleWebhook = async (req, res) => {
     return res.status(401).json({ message: "Unauthorized" });
   }
 
-  const { awb, current_status, order_id, courier_name } = req.body;
+  const { awb, current_status, status, order_id, channel_order_id, courier_name } = req.body;
 
   try {
     const cleanAwb = String(awb || "").trim();
-    if (!cleanAwb && !order_id) {
+    if (!cleanAwb && !order_id && !channel_order_id) {
       // Shiprocket test ping verification
       return res.status(200).json({ success: true, message: "Webhook endpoint active and verified" });
     }
@@ -338,23 +350,43 @@ export const handleWebhook = async (req, res) => {
     const lookup = [];
     if (cleanAwb) lookup.push({ awbCode: cleanAwb }, { trackingNumber: cleanAwb });
     if (order_id) lookup.push({ shiprocketOrderId: String(order_id) });
+    if (channel_order_id) {
+      // channel_order_id may be 'TRS-1B0E7C' or raw Mongo ID
+      const cleanedChannel = String(channel_order_id).replace(/^TRS-/, "");
+      if (cleanedChannel.length === 24) lookup.push({ _id: cleanedChannel });
+      else lookup.push({ _id: { $regex: cleanedChannel + "$", $options: "i" } });
+    }
+
     const order = await Order.findOne({ $or: lookup }).populate("user", "name email");
 
     if (order) {
       const prevStatus = order.status;
-      const statusUpper = String(current_status || "").toUpperCase();
-      // Courier events can arrive late or out of order: never move a
-      // delivered or cancelled order back to "shipped"
+      const statusUpper = String(current_status || status || "").toUpperCase();
       const settled = ["delivered", "cancelled"].includes(order.status);
 
-      // Exact match: "UNDELIVERED" and "RTO DELIVERED" (returned to us) are not deliveries
-      if (!settled && statusUpper === "DELIVERED") {
+      // 1. Cancellation from Shiprocket
+      if (statusUpper.includes("CANCEL")) {
+        if (order.status !== "cancelled") {
+          order.status = "cancelled";
+          order.shipmentStatus = "CANCELLED";
+          order.cancellationReason = "Cancelled via Shiprocket";
+          order.cancelledAt = new Date();
+          await restoreStock(order._id);
+          console.log(`Cancelled Order ${order._id} via Shiprocket webhook`);
+        }
+      }
+      // 2. Delivered
+      else if (!settled && statusUpper === "DELIVERED") {
         order.status = "delivered";
         order.shipmentStatus = "DELIVERED";
-      } else if (!settled && statusUpper.includes("OUT FOR DELIVERY")) {
+      }
+      // 3. Out for delivery
+      else if (!settled && statusUpper.includes("OUT FOR DELIVERY")) {
         order.status = "shipped";
         order.shipmentStatus = "OUT_FOR_DELIVERY";
-      } else if (!settled && !statusUpper.startsWith("RTO") && (statusUpper.includes("IN TRANSIT") || statusUpper.includes("PICKED UP"))) {
+      }
+      // 4. In transit / Picked up
+      else if (!settled && !statusUpper.startsWith("RTO") && (statusUpper.includes("IN TRANSIT") || statusUpper.includes("PICKED UP"))) {
         order.status = "shipped";
         order.shipmentStatus = "IN_TRANSIT";
       }
@@ -363,7 +395,9 @@ export const handleWebhook = async (req, res) => {
       await order.save();
       console.log(`Updated Order ${order._id} status to ${order.status} via Shiprocket webhook`);
 
-      notifyStatusChange(order, prevStatus);
+      if (prevStatus !== order.status) {
+        notifyStatusChange(order, prevStatus);
+      }
     }
 
     return res.json({ success: true, received: true });
@@ -372,3 +406,77 @@ export const handleWebhook = async (req, res) => {
     return res.status(500).json({ message: "Webhook processing error" });
   }
 };
+
+/**
+ * 6. Live Sync Status from Shiprocket (Admin)
+ * Directly queries Shiprocket's order API and updates local database status
+ */
+export const syncShiprocketStatus = async (req, res) => {
+  const { orderId } = req.params;
+
+  try {
+    const order = await Order.findById(orderId).populate("user", "name email");
+    if (!order) return res.status(404).json({ message: "Order not found" });
+
+    if (!order.shiprocketOrderId) {
+      return res.status(400).json({ message: "This order has not been dispatched to Shiprocket yet" });
+    }
+
+    const srResult = await getShiprocketOrderDetails(order.shiprocketOrderId);
+    const srData = srResult.data;
+    const srStatus = String(srData.status || "").toUpperCase();
+    const prevStatus = order.status;
+
+    let updated = false;
+
+    if (srStatus === "CANCELED" || srStatus === "CANCELLED") {
+      if (order.status !== "cancelled") {
+        order.status = "cancelled";
+        order.shipmentStatus = "CANCELLED";
+        order.cancellationReason = "Cancelled in Shiprocket panel";
+        order.cancelledAt = new Date();
+        await restoreStock(order._id);
+        updated = true;
+      }
+    } else if (srStatus === "DELIVERED") {
+      if (order.status !== "delivered") {
+        order.status = "delivered";
+        order.shipmentStatus = "DELIVERED";
+        updated = true;
+      }
+    } else if (srStatus.includes("OUT FOR DELIVERY")) {
+      order.status = "shipped";
+      order.shipmentStatus = "OUT_FOR_DELIVERY";
+      updated = true;
+    } else if (srStatus.includes("IN TRANSIT") || srStatus.includes("PICKED UP")) {
+      order.status = "shipped";
+      order.shipmentStatus = "IN_TRANSIT";
+      updated = true;
+    }
+
+    if (srData.last_mile_awb) {
+      order.awbCode = srData.last_mile_awb;
+      order.trackingNumber = srData.last_mile_awb;
+    }
+    if (srData.last_mile_courier_name) {
+      order.courierName = srData.last_mile_courier_name;
+      order.courierPartner = srData.last_mile_courier_name;
+    }
+
+    await order.save();
+    if (updated && prevStatus !== order.status) {
+      notifyStatusChange(order, prevStatus);
+    }
+
+    return res.json({
+      success: true,
+      message: `Status synced with Shiprocket: ${srStatus}`,
+      shiprocketStatus: srStatus,
+      order,
+    });
+  } catch (err) {
+    console.error("Sync Shiprocket status error:", err);
+    return res.status(500).json({ message: err.message || "Failed to sync status from Shiprocket" });
+  }
+};
+

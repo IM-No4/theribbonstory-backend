@@ -5,6 +5,7 @@ import {
   createShipment,
   getShippingLabelPdf,
   handleWebhook,
+  syncShiprocketStatus,
 } from "../controllers/shippingController.js";
 import { protect, admin } from "../middleware/auth.js";
 
@@ -21,5 +22,6 @@ router.post("/notify", handleWebhook);
 // Protected Admin Routes (Shiprocket Fulfillment)
 router.post("/create-shipment/:orderId", protect, admin, createShipment);
 router.get("/label/:orderId", protect, admin, getShippingLabelPdf);
+router.post("/sync/:orderId", protect, admin, syncShiprocketStatus);
 
 export default router;

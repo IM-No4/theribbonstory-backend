@@ -288,3 +288,37 @@ export const markOrderPaid = async ({ razorpayOrderId, razorpayPaymentId, razorp
   issueInvoice(order);
   return { order, newlyPaid: true };
 };
+
+/**
+ * Detects if a cart/order item is a customized 3D keepsake or made-to-order figurine.
+ * Custom keepsakes cannot be placed via Cash on Delivery (Prepaid only).
+ */
+export const isCustomKeepsakeItem = (item) => {
+  if (!item) return false;
+  const c = item.customization || {};
+  return Boolean(
+    c.photoUrl ||
+    c.cuteImageUrl ||
+    c.reference3D?.approvedPreview ||
+    c.reference3D?.sessionId ||
+    c.category ||
+    c.customName ||
+    item.fromCatalog === false ||
+    item.sizeId ||
+    item.hamper?.keepsakeId === "3d-miniature" ||
+    (typeof item.productId === "string" && (
+      item.productId.startsWith("custom-3d-") ||
+      item.productId.startsWith("keepsake-")
+    )) ||
+    (typeof item.name === "string" && (
+      item.name.toLowerCase().includes("3d") ||
+      item.name.toLowerCase().includes("keepsake") ||
+      item.name.toLowerCase().includes("figurine")
+    ))
+  );
+};
+
+export const containsCustomKeepsake = (items) => {
+  return Array.isArray(items) && items.some(isCustomKeepsakeItem);
+};
+

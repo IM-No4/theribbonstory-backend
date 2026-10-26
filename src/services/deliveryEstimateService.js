@@ -3,7 +3,7 @@ import { checkServiceability as checkShiprocketServiceability } from "./shiprock
 
 export const PRINTER_CAPACITY_PER_DAY = 1; // Single 3D printer capacity: 1 keepsake figurine per day
 export const DAILY_PRINT_SLOTS = 3; // Daily studio 3D printing capacity slots
-export const STANDARD_SHIPPING_FEE = 79;
+export const STANDARD_SHIPPING_FEE = 99;
 export const EXPRESS_PRIORITY_FEE = 199;
 export const FREE_SHIPPING_THRESHOLD = 999;
 
@@ -176,6 +176,8 @@ export async function calculateDeliveryEstimate({
     isMetro,
     hasCustom3D,
     customUnits,
+    codAvailable: !hasCustom3D,
+    codRestrictedReason: hasCustom3D ? "Custom keepsake orders require online prepayment (COD disabled)" : null,
     queueStats: {
       singlePrinterCapacity: "1 figurine/day",
       dailyCapacity: DAILY_PRINT_SLOTS,

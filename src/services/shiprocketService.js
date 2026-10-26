@@ -34,26 +34,25 @@ export const getShiprocketToken = async () => {
       body: JSON.stringify({ email, password }),
     });
 
+    const data = await response.json().catch(() => ({}));
+
     if (!response.ok) {
-      console.warn("Shiprocket auth response error, fallback to sandbox mode:", response.status);
-      cachedToken = "mock_shiprocket_jwt_token_development";
-      tokenExpiresAt = Date.now() + 86400000;
-      return cachedToken;
+      const errMsg = data?.message || `Authentication failed with status ${response.status}`;
+      console.error("Shiprocket authentication error:", errMsg);
+      throw new Error(`Shiprocket Auth Error: ${errMsg}. Please verify that an API User is created under Shiprocket Settings > API.`);
     }
 
-    const data = await response.json();
     if (data?.token) {
       cachedToken = data.token;
       tokenExpiresAt = Date.now() + 9 * 24 * 60 * 60 * 1000; // 9 days cache
       return cachedToken;
     }
-  } catch (err) {
-    console.error("Shiprocket auth error, fallback to mock mode:", err.message);
-  }
 
-  cachedToken = "mock_shiprocket_jwt_token_development";
-  tokenExpiresAt = Date.now() + 86400000;
-  return cachedToken;
+    throw new Error("Shiprocket did not return a valid session token.");
+  } catch (err) {
+    console.error("Shiprocket auth error:", err.message);
+    throw err;
+  }
 };
 
 /**
@@ -270,8 +269,8 @@ export const createShiprocketOrder = async (order) => {
       body: JSON.stringify(payload),
     });
 
-    const data = await res.json();
-    if (data?.order_id && data?.shipment_id) {
+    const data = await res.json().catch(() => ({}));
+    if (res.ok && data?.order_id && data?.shipment_id) {
       return {
         success: true,
         order_id: data.order_id,
@@ -280,18 +279,13 @@ export const createShiprocketOrder = async (order) => {
         courier_name: data.courier_name || "Express Courier",
       };
     }
+
+    const detailMsg = data?.message || (data?.errors ? JSON.stringify(data.errors) : `HTTP ${res.status}`);
+    throw new Error(`Shiprocket Order Creation Failed: ${detailMsg}`);
   } catch (err) {
     console.error("Shiprocket order creation error:", err.message);
+    throw err;
   }
-
-  // Fallback
-  return {
-    success: true,
-    order_id: Math.floor(1000000 + Math.random() * 9000000),
-    shipment_id: Math.floor(10000000 + Math.random() * 90000000),
-    awb_code: `SR${Math.floor(100000000 + Math.random() * 900000000)}IN`,
-    courier_name: "Express Courier",
-  };
 };
 
 /**
@@ -322,8 +316,8 @@ export const generateAWB = async (shipmentId, courierId) => {
       }),
     });
 
-    const data = await res.json();
-    if (data?.response?.data?.awb_code) {
+    const data = await res.json().catch(() => ({}));
+    if (res.ok && data?.response?.data?.awb_code) {
       return {
         success: true,
         awb_code: data.response.data.awb_code,
@@ -331,15 +325,12 @@ export const generateAWB = async (shipmentId, courierId) => {
         status: "AWB_ASSIGNED",
       };
     }
+    const errMsg = data?.message || data?.response?.data?.error || `HTTP ${res.status}`;
+    throw new Error(`Shiprocket AWB Generation Failed: ${errMsg}`);
   } catch (err) {
     console.error("Shiprocket AWB generation error:", err.message);
+    throw err;
   }
-
-  return {
-    success: true,
-    awb_code: `SR${Math.floor(100000000 + Math.random() * 900000000)}IN`,
-    courier_name: "Express Courier",
-  };
 };
 
 /**
@@ -365,21 +356,19 @@ export const generateShippingLabel = async (shipmentId) => {
       body: JSON.stringify({ shipment_id: [shipmentId] }),
     });
 
-    const data = await res.json();
-    if (data?.label_url) {
+    const data = await res.json().catch(() => ({}));
+    if (res.ok && data?.label_url) {
       return {
         success: true,
         label_url: data.label_url,
       };
     }
+    const errMsg = data?.message || `HTTP ${res.status}`;
+    throw new Error(`Shiprocket Label Generation Failed: ${errMsg}`);
   } catch (err) {
     console.error("Shiprocket label generation error:", err.message);
+    throw err;
   }
-
-  return {
-    success: true,
-    label_url: "https://shiprocket.co/sample_shipping_label.pdf",
-  };
 };
 
 /**
@@ -433,3 +422,39 @@ export const trackShipment = async (awbOrOrderId) => {
     message: "Tracking details will be updated once package is scanned at courier hub.",
   };
 };
+
+/**
+ * Fetch Live Order Details & Status directly from Shiprocket
+ */
+export const getShiprocketOrderDetails = async (shiprocketOrderId) => {
+  const token = await getShiprocketToken();
+  const cleanId = String(shiprocketOrderId).trim();
+
+  if (token.startsWith("mock_")) {
+    return {
+      success: true,
+      data: {
+        id: cleanId,
+        status: "PROCESSING",
+      },
+    };
+  }
+
+  const res = await fetch(`${SHIPROCKET_BASE_URL}/orders/show/${cleanId}`, {
+    headers: {
+      "Content-Type": "application/json",
+      Authorization: `Bearer ${token}`,
+    },
+  });
+
+  const data = await res.json().catch(() => ({}));
+  if (res.ok && data?.data) {
+    return {
+      success: true,
+      data: data.data,
+    };
+  }
+
+  throw new Error(data?.message || `Failed to fetch order from Shiprocket (HTTP ${res.status})`);
+};
+
