@@ -1,3 +1,4 @@
+
 import path from "path";
 import fs from "fs/promises";
 import { existsSync, mkdirSync } from "fs";
@@ -9,7 +10,6 @@ const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const uploadsDir = path.join(__dirname, "..", "..", "uploads");
 const chibiOutputDir = path.join(uploadsDir, "chibi");
 
-// Ensure permanent storage directory exists
 if (!existsSync(chibiOutputDir)) {
   mkdirSync(chibiOutputDir, { recursive: true });
 }
@@ -22,11 +22,13 @@ export function getClient() {
   if (!clientPromise) {
     const token = process.env.HF_TOKEN || process.env.HUGGINGFACE_TOKEN;
     const options = token ? { hf_token: token } : {};
+
     clientPromise = Client.connect(SPACE, options).catch((err) => {
       clientPromise = undefined;
       throw err;
     });
   }
+
   return clientPromise;
 }
 
@@ -35,55 +37,72 @@ export const FIGURINE_STYLES = {
     id: "chibi",
     label: "Cute Chibi",
     tagline: "Adorable proportions, compact body & soft features",
-    promptIntro: "Convert the uploaded reference photograph directly into a cute, high-quality 3D-printable chibi figurine. Full-body collectible miniature figurine standing on an integrated circular display stand.",
-    sculptingGuide: `3D PRINT-READY CHIBI SCULPTING:
-- Convert the subject into a cute chibi 3D figurine style: slightly oversized head, adorable expressive features, compact body, sturdy limbs, standing in a stable pose.
-- The primary purpose is real-world 3D printing: simplify complex fabric wrinkles, loose threads, and intricate patterns into clean, smooth, solid-colored sculpted surfaces to make 3D printing clean and effortless.
-- Solid, watertight manifold geometry with thick connected features, no fragile or floating pieces.`
+    promptIntro:
+      "Transform the uploaded reference photo into a cute, 3D-printable chibi figurine. Show the full body on an integrated circular display base.",
+    sculptingGuide:
+      "Use a slightly oversized head, compact body, soft features and sturdy limbs. Keep the person recognizable. Use simple, smooth sculpted forms suitable for physical 3D printing.",
   },
+
   caricature: {
     id: "caricature",
     label: "Fun Caricature",
     tagline: "Playful cartoon exaggeration & charming smile",
-    promptIntro: "Convert the uploaded reference photograph directly into a fun, stylized 3D-printable cartoon caricature figurine. Full-body collectible miniature figurine standing on an integrated circular display stand.",
-    sculptingGuide: `3D PRINT-READY CARICATURE SCULPTING:
-- Convert the subject into a playful, stylized cartoon caricature 3D figurine: playfully accentuate their signature smile, joyful facial expression, and distinctive hairstyle while keeping them immediately recognizable.
-- Dynamic, charming, humorous and warm cartoon proportions with a slightly enlarged expressive head and lively character posture.
-- Designed specifically for real-world 3D printing: smooth planar cartoon contours, solid color blocking, and clean sculpted geometry with no fragile or floating pieces.`
+    promptIntro:
+      "Transform the uploaded reference photo into a stylized, 3D-printable caricature figurine. Show the full body on an integrated circular display base.",
+    sculptingGuide:
+      "Use playful cartoon proportions and expressive features. Gently exaggerate the person's existing facial expression and distinctive features without changing their identity or inventing new features. Use sturdy, smooth sculpted forms.",
   },
+
   realistic: {
     id: "realistic",
     label: "Mini Realistic",
     tagline: "True-to-life human proportions & detailed sculpt",
-    promptIntro: "Convert the uploaded reference photograph directly into a realistic miniature 3D-printable portrait figurine. Full-body collectible miniature figurine standing on an integrated circular display stand.",
-    sculptingGuide: `3D PRINT-READY REALISTIC SCULPTING:
-- Convert the subject into a miniature realistic 3D portrait figurine: maintain natural, realistic human anatomy, proportions, accurate facial contours, and authentic posture.
-- Faithful lifelike sculpture with realistic head-to-body ratio, authentic clothing folds, and refined portrait details.
-- Engineered for physical 3D printing: structurally reinforced limbs and ankles, solid watertight manifold geometry, firmly grounded on the display pedestal.`
+    promptIntro:
+      "Transform the uploaded reference photo into a realistic miniature 3D portrait figurine. Show the full body on an integrated circular display base.",
+    sculptingGuide:
+      "Preserve natural human proportions, facial contours, hairstyle, expression and posture. Create a lifelike miniature sculpture with simplified details suitable for physical 3D printing.",
   },
+
   bobblehead: {
     id: "bobblehead",
     label: "Classic Bobblehead",
     tagline: "Prominent expressive head & collectible trophy stance",
-    promptIntro: "Convert the uploaded reference photograph directly into a classic collectible 3D-printable bobblehead figurine. Full-body collectible miniature figurine standing on an integrated circular trophy pedestal.",
-    sculptingGuide: `3D PRINT-READY BOBBLEHEAD SCULPTING:
-- Convert the subject into a classic collectible bobblehead figurine style: prominent oversized detailed head with cheerful expressive features, resting on a cute compact body with a sturdy reinforced neck joint.
-- Fun collectible trophy stance, standing proudly on an integrated tiered circular trophy pedestal.
-- Designed for real-world 3D printing: reinforced neck connection, solid thick geometry, stable center of gravity, with smooth vibrant surfaces.`
-  }
+    promptIntro:
+      "Transform the uploaded reference photo into a collectible, 3D-printable bobblehead figurine. Show the full body on an integrated circular display base.",
+    sculptingGuide:
+      "Use a noticeably oversized head and a compact body, with a sturdy neck connection and stable standing pose. Preserve the person's recognizable face, hairstyle, clothing and actual features.",
+  },
 };
 
 export async function getActivePrintColors() {
   try {
-    const { default: StudioSettings, DEFAULT_PRINT_COLORS } = await import("../models/StudioSettings.js");
-    const settings = await StudioSettings.findOne({ key: "default" }).lean();
-    if (settings && Array.isArray(settings.availableColors) && settings.availableColors.length > 0) {
-      const active = settings.availableColors.filter((c) => c.isActive !== false);
+    const {
+      default: StudioSettings,
+      DEFAULT_PRINT_COLORS,
+    } = await import("../models/StudioSettings.js");
+
+    const settings = await StudioSettings.findOne({
+      key: "default",
+    }).lean();
+
+    if (
+      settings &&
+      Array.isArray(settings.availableColors) &&
+      settings.availableColors.length > 0
+    ) {
+      const active = settings.availableColors.filter(
+        (color) => color.isActive !== false
+      );
+
       if (active.length > 0) return active;
     }
-    return DEFAULT_PRINT_COLORS.filter((c) => c.isActive !== false);
+
+    return DEFAULT_PRINT_COLORS.filter(
+      (color) => color.isActive !== false
+    );
   } catch (err) {
     console.warn("Could not load print colors from DB:", err.message);
+
     return [
       { name: "White", hex: "#FFFFFF" },
       { name: "Black", hex: "#111111" },
@@ -100,40 +119,61 @@ export async function getActivePrintColors() {
   }
 }
 
-export function buildFigurinePrompt(styleKey = "chibi", customPrompt = null, printColors = null) {
+/**
+ * Builds a concise prompt that prioritizes reference-photo fidelity.
+ * The selected style changes sculpting proportions, not the person's identity.
+ */
+export function buildFigurinePrompt(
+  styleKey = "chibi",
+  customPrompt = null,
+  printColors = null
+) {
   const style = FIGURINE_STYLES[styleKey] || FIGURINE_STYLES.chibi;
 
-  const colorNames = Array.isArray(printColors) && printColors.length > 0
-    ? printColors.map((c) => (typeof c === "string" ? c : c.name)).filter(Boolean)
-    : ["White", "Black", "Beige/Skin", "Red", "Blue", "Yellow", "Green", "Brown", "Grey", "Pink", "Orange"];
+  const colorNames =
+    Array.isArray(printColors) && printColors.length > 0
+      ? printColors
+          .map((color) =>
+            typeof color === "string" ? color : color.name
+          )
+          .filter(Boolean)
+      : [
+          "White",
+          "Black",
+          "Beige/Skin",
+          "Red",
+          "Blue",
+          "Yellow",
+          "Green",
+          "Brown",
+          "Grey",
+          "Pink",
+          "Orange",
+        ];
 
   const basePrompt = `${style.promptIntro}
 
-SOLID-COLOR SCULPT (HIGHEST PRIORITY): Every part of the figurine is a smooth, matte, single-color moulded plastic surface, like a vinyl toy. Each color region is one flat uniform color with no texture, no printed or embossed pattern, no fabric weave, and no fine lines.
+REFERENCE PHOTO IS THE SOURCE OF TRUTH:
+Reproduce the actual person shown in the uploaded photo. Preserve their visible gender presentation, face, skin tone, hairstyle, facial hair, expression, clothing, accessories and pose.
 
-Palette: max 4 colors from [${colorNames.join(", ")}]. Snap every photo color to the nearest one.
+Do not invent or assume features. Do not add a turban, hat, head covering, beard, moustache, jewellery or other accessory unless it is clearly present in the reference. Do not remove features that are present. If a detail is unclear or hidden, keep it simple instead of guessing. For multiple people, preserve each person's distinct appearance.
 
-HEADWEAR (turban, cap, scarf): Sculpt only the overall silhouette of the headwear as one smooth, solid, uniformly colored shape with soft rounded folds. The surface is plain matte red (or the nearest palette color) with no print, no embroidery, no bandhani dots, no motifs, and no fabric texture. It should look like a plain painted plastic cap.
-
-FACIAL HAIR: Only if the person clearly has a beard or mustache, sculpt it as ONE solid, smooth, rounded block of black or brown plastic that follows the jaw and upper lip, like a painted vinyl toy beard. It has a clean edge against the skin, and the whole shape is a single solid mass with no individual hairs, strands, stubble, or fade. If the person has no facial hair, the face is completely smooth. Hair on the head follows the same rule: one solid sculpted shape, no strands.
-
-CLOTHING: Sculpt only the overall silhouette of each garment (shirt, pants, dress, jacket) as smooth, solid, block-colored moulded plastic surfaces with no graphics, logos, prints, checks, stripes, or fabric weave. Each garment is one solid uniform color from your 4-color palette.
-
-SUBJECT FIDELITY:
-- Faithfully preserve the exact person (or people) from the reference photo: match their face, gender, skin tone, eye expression, and likeness.
-- If multiple people are in the photo, sculpt all of them standing together on the shared base.
-
+SELECTED STYLE:
 ${style.sculptingGuide}
 
-BASE / PEDESTAL:
-- The figurine stands firmly attached on a solid, clean, circular display pedestal.
-- Keep the base smooth and blank with no text or letters, unless custom engraving text is explicitly specified below.`.trim();
+3D-PRINTABLE FINISH:
+Create a physical-looking matte PLA figurine with smooth, solid-color surfaces. Use no more than 4 colors from this palette: ${colorNames.join(", ")}. Match the visible colors in the photo as closely as the palette allows. Simplify tiny details only when needed for printing; do not change the person's identity or add decorative details. Use sturdy connected features, stable feet and printable geometry.
 
-  if (customPrompt && typeof customPrompt === "string" && customPrompt.trim()) {
-    if (customPrompt.includes("3D-printable") && (customPrompt.includes("SOLID-COLOR SCULPT") || customPrompt.includes("CRITICAL SUBJECT"))) {
-      return customPrompt.trim();
-    }
-    return `${basePrompt}\n\n### Customer Personalization & Custom Details:\n${customPrompt.trim()}`;
+BASE:
+Attach the full figurine to a simple, smooth, blank circular display base. No text or engraving unless explicitly requested.`;
+
+  if (typeof customPrompt === "string" && customPrompt.trim()) {
+    return `${basePrompt}
+
+CUSTOMER-REQUESTED DETAILS:
+Apply these details only when explicitly requested and consistent with the reference person's actual appearance. Do not use them to replace or alter the person's identity.
+
+${customPrompt.trim()}`;
   }
 
   return basePrompt;
@@ -142,18 +182,24 @@ BASE / PEDESTAL:
 export const DEFAULT_CHIBI_PROMPT = buildFigurinePrompt("chibi");
 
 /**
- * Downloads image bytes from Gradio URL and saves permanently to /uploads/chibi/
+ * Downloads the generated image and saves it permanently.
  */
 async function saveGradioImageLocally(gradioUrl) {
-  const res = await fetch(gradioUrl);
-  if (!res.ok) {
-    throw new Error(`Failed to download generated image from Gradio: ${res.statusText}`);
+  const response = await fetch(gradioUrl);
+
+  if (!response.ok) {
+    throw new Error(
+      `Failed to download generated image from Gradio: ${response.statusText}`
+    );
   }
 
-  const arrayBuffer = await res.arrayBuffer();
+  const arrayBuffer = await response.arrayBuffer();
   const buffer = Buffer.from(arrayBuffer);
 
-  const filename = `chibi-${Date.now()}-${Math.floor(Math.random() * 1e8)}.png`;
+  const filename = `chibi-${Date.now()}-${Math.floor(
+    Math.random() * 1e8
+  )}.png`;
+
   const permanentPath = path.join(chibiOutputDir, filename);
 
   await fs.writeFile(permanentPath, buffer);
@@ -167,9 +213,13 @@ async function saveGradioImageLocally(gradioUrl) {
 }
 
 /**
- * Generates a 3D figurine image from a local file path
+ * Generates a figurine image from a local image file.
  */
-export async function generateChibiFromLocalFile(localFilePath, customPrompt = null, style = "chibi") {
+export async function generateChibiFromLocalFile(
+  localFilePath,
+  customPrompt = null,
+  style = "chibi"
+) {
   const client = await getClient();
   const printColors = await getActivePrintColors();
   const prompt = buildFigurinePrompt(style, customPrompt, printColors);
@@ -180,20 +230,20 @@ export async function generateChibiFromLocalFile(localFilePath, customPrompt = n
     aspect_ratio: "3:4",
   };
 
-  console.log("\n==================== [CHIBI GENERATION REQUEST] ====================");
-  console.log(`[Timestamp]:     ${new Date().toISOString()}`);
-  console.log(`[Space Target]:  ${SPACE}`);
-  console.log(`[Input Image]:   ${localFilePath}`);
-  console.log(`[Seed]:          ${payload.seed}`);
-  console.log(`[Resolution]:    ${payload.resolution}`);
-  console.log(`[Aspect Ratio]:  ${payload.aspect_ratio}`);
+  console.log("\n==================== [FIGURINE GENERATION REQUEST] ====================");
+  console.log(`[Timestamp]: ${new Date().toISOString()}`);
+  console.log(`[Space Target]: ${SPACE}`);
+  console.log(`[Input Image]: ${localFilePath}`);
+  console.log(`[Seed]: ${payload.seed}`);
+  console.log(`[Aspect Ratio]: ${payload.aspect_ratio}`);
   console.log(`[Prompt Length]: ${payload.prompt.length} characters`);
   console.log("-------------------- [PROMPT TEXT] --------------------");
   console.log(payload.prompt);
-  console.log("====================================================================\n");
+  console.log("=======================================================================\n");
 
   const startTime = Date.now();
   let result;
+
   try {
     result = await client.predict("/generate", {
       prompt: payload.prompt,
@@ -202,10 +252,10 @@ export async function generateChibiFromLocalFile(localFilePath, customPrompt = n
       aspect_ratio: payload.aspect_ratio,
     });
   } catch (err) {
-    console.error("\n==================== [CHIBI GENERATION ERROR] ====================");
-    console.error(`[Failed After]:  ${Date.now() - startTime}ms`);
-    console.error(`[Error]:`, err.message || err);
-    console.error("==================================================================\n");
+    console.error("\n==================== [FIGURINE GENERATION ERROR] ====================");
+    console.error(`[Failed After]: ${Date.now() - startTime}ms`);
+    console.error("[Error]:", err.message || err);
+    console.error("=====================================================================\n");
     throw err;
   }
 
@@ -213,57 +263,78 @@ export async function generateChibiFromLocalFile(localFilePath, customPrompt = n
   const outputItem = result?.data?.[0];
   const fileUrl = outputItem?.url;
 
-  console.log("\n==================== [CHIBI GENERATION RESPONSE] ====================");
-  console.log(`[Duration]:      ${durationMs}ms`);
+  console.log("\n==================== [FIGURINE GENERATION RESPONSE] ====================");
+  console.log(`[Duration]: ${durationMs}ms`);
   console.log(`[Generated URL]: ${fileUrl || "None"}`);
-  console.log("====================================================================\n");
+  console.log("========================================================================\n");
 
   if (!fileUrl) {
-    throw new Error("No image output returned from Qwen Turbo Chibi generation");
+    throw new Error(
+      "No image output returned from Qwen Turbo figurine generation"
+    );
   }
 
   return await saveGradioImageLocally(fileUrl);
 }
 
 /**
- * Generates a 3D Chibi figurine image from an existing photo URL
- * Supports local /uploads/ URLs or external URLs
+ * Generates a figurine image from an existing photo URL.
+ * Supports local /uploads/ URLs and external URLs.
  */
-export async function generateChibiFromUrl(photoUrl, customPrompt = null, style = "chibi") {
+export async function generateChibiFromUrl(
+  photoUrl,
+  customPrompt = null,
+  style = "chibi"
+) {
   if (!photoUrl) {
     throw new Error("Photo URL is required");
   }
 
-  // If it's a local /uploads/ URL, resolve it directly on disk
-  if (photoUrl.startsWith("/uploads/") || photoUrl.startsWith("uploads/")) {
+  if (
+    photoUrl.startsWith("/uploads/") ||
+    photoUrl.startsWith("uploads/")
+  ) {
     const relativePath = photoUrl.replace(/^\/?uploads\//, "");
     const localDiskPath = path.join(uploadsDir, relativePath);
 
     try {
       await fs.access(localDiskPath);
-      return await generateChibiFromLocalFile(localDiskPath, customPrompt, style);
+      return await generateChibiFromLocalFile(
+        localDiskPath,
+        customPrompt,
+        style
+      );
     } catch {
-      // If local file not found directly, fallback to HTTP fetch
+      // If the local file is unavailable, try fetching it over HTTP.
     }
   }
 
-  // Handle external or full URLs
   let resolvedUrl = photoUrl;
+
   if (photoUrl.startsWith("/")) {
     resolvedUrl = `http://localhost:${process.env.PORT || 5050}${photoUrl}`;
   }
 
-  const tmpPath = path.join(os.tmpdir(), `chibi-input-${Date.now()}-${Math.floor(Math.random() * 1e6)}.jpg`);
+  const tmpPath = path.join(
+    os.tmpdir(),
+    `chibi-input-${Date.now()}-${Math.floor(Math.random() * 1e6)}.jpg`
+  );
 
   try {
-    const res = await fetch(resolvedUrl);
-    if (!res.ok) {
+    const response = await fetch(resolvedUrl);
+
+    if (!response.ok) {
       throw new Error(`Could not fetch photo from ${resolvedUrl}`);
     }
-    const buf = Buffer.from(await res.arrayBuffer());
-    await fs.writeFile(tmpPath, buf);
 
-    return await generateChibiFromLocalFile(tmpPath, customPrompt, style);
+    const buffer = Buffer.from(await response.arrayBuffer());
+    await fs.writeFile(tmpPath, buffer);
+
+    return await generateChibiFromLocalFile(
+      tmpPath,
+      customPrompt,
+      style
+    );
   } finally {
     await fs.unlink(tmpPath).catch(() => {});
   }
