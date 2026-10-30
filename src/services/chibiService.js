@@ -38,7 +38,7 @@ export const FIGURINE_STYLES = {
     label: "Cute Chibi",
     tagline: "Adorable proportions, compact body & soft features",
     promptIntro:
-      "Transform the uploaded reference photo into a cute, 3D-printable chibi figurine. Show the full body on an integrated circular display base.",
+      "Transform ONLY the person/subject from the uploaded reference photo into a cute, 3D-printable chibi figurine standing on an integrated circular display base. Completely remove the original photo background and isolate the figurine on a clean, plain studio background.",
     sculptingGuide:
       "Use a slightly oversized head, compact body, soft features and sturdy limbs. Keep the person recognizable. Use simple, smooth sculpted forms suitable for physical 3D printing.",
   },
@@ -48,7 +48,7 @@ export const FIGURINE_STYLES = {
     label: "Fun Caricature",
     tagline: "Playful cartoon exaggeration & charming smile",
     promptIntro:
-      "Transform the uploaded reference photo into a stylized, 3D-printable caricature figurine. Show the full body on an integrated circular display base.",
+      "Transform ONLY the person/subject from the uploaded reference photo into a stylized, 3D-printable caricature figurine standing on an integrated circular display base. Completely remove the original photo background and isolate the figurine on a clean, plain studio background.",
     sculptingGuide:
       "Use playful cartoon proportions and expressive features. Gently exaggerate the person's existing facial expression and distinctive features without changing their identity or inventing new features. Use sturdy, smooth sculpted forms.",
   },
@@ -58,7 +58,7 @@ export const FIGURINE_STYLES = {
     label: "Mini Realistic",
     tagline: "True-to-life human proportions & detailed sculpt",
     promptIntro:
-      "Transform the uploaded reference photo into a realistic miniature 3D portrait figurine. Show the full body on an integrated circular display base.",
+      "Transform ONLY the person/subject from the uploaded reference photo into a realistic miniature 3D portrait figurine standing on an integrated circular display base. Completely remove the original photo background and isolate the figurine on a clean, plain studio background.",
     sculptingGuide:
       "Preserve natural human proportions, facial contours, hairstyle, expression and posture. Create a lifelike miniature sculpture with simplified details suitable for physical 3D printing.",
   },
@@ -68,7 +68,7 @@ export const FIGURINE_STYLES = {
     label: "Classic Bobblehead",
     tagline: "Prominent expressive head & collectible trophy stance",
     promptIntro:
-      "Transform the uploaded reference photo into a collectible, 3D-printable bobblehead figurine. Show the full body on an integrated circular display base.",
+      "Transform ONLY the person/subject from the uploaded reference photo into a collectible, 3D-printable bobblehead figurine standing on an integrated circular display base. Completely remove the original photo background and isolate the figurine on a clean, plain studio background.",
     sculptingGuide:
       "Use a noticeably oversized head and a compact body, with a sturdy neck connection and stable standing pose. Preserve the person's recognizable face, hairstyle, clothing and actual features.",
   },
@@ -153,8 +153,15 @@ export function buildFigurinePrompt(
 
   const basePrompt = `${style.promptIntro}
 
-REFERENCE PHOTO IS THE SOURCE OF TRUTH:
-Reproduce the actual person shown in the uploaded photo. Preserve their visible gender presentation, face, skin tone, hairstyle, facial hair, expression, clothing, accessories and pose.
+BACKGROUND & ENVIRONMENT (MANDATORY - REMOVE ORIGINAL BACKGROUND):
+- Completely remove and discard the original background and setting from the photo.
+- Do NOT keep any background scenery, landscape, water, river, bridge, sky, buildings, walls, ground, or environment from the uploaded photo.
+- The 3D figurine and its circular base must be cleanly isolated in a professional product studio setting on a solid, plain, seamless light neutral background (smooth off-white / light gray studio backdrop #F4F4F6).
+- Include only soft, balanced studio photography lighting and a subtle contact shadow cast directly under the circular base onto the clean studio ground.
+- Zero clutter, zero landscape, zero outdoor elements.
+
+REFERENCE PHOTO IS THE SOURCE OF TRUTH (SUBJECT ONLY):
+Extract and reproduce ONLY the person shown in the uploaded photo. Discard all background scenery and environment. Preserve their visible gender presentation, face, skin tone, hairstyle, facial hair, expression, clothing, accessories and pose.
 
 Do not invent or assume features. Do not add a turban, hat, head covering, beard, moustache, jewellery or other accessory unless it is clearly present in the reference. Do not remove features that are present. If a detail is unclear or hidden, keep it simple instead of guessing. For multiple people, preserve each person's distinct appearance.
 
@@ -165,13 +172,13 @@ ${style.sculptingGuide}
 Create a physical-looking matte PLA figurine with smooth, solid-color surfaces. Use no more than 4 colors from this palette: ${colorNames.join(", ")}. Match the visible colors in the photo as closely as the palette allows. Simplify tiny details only when needed for printing; do not change the person's identity or add decorative details. Use sturdy connected features, stable feet and printable geometry.
 
 BASE:
-Attach the full figurine to a simple, smooth, blank circular display base. No text or engraving unless explicitly requested.`;
+Attach the full figurine to a simple, smooth, blank circular display base standing on the clean studio surface. No text or engraving unless explicitly requested.`;
 
   if (typeof customPrompt === "string" && customPrompt.trim()) {
     return `${basePrompt}
 
 CUSTOMER-REQUESTED DETAILS:
-Apply these details only when explicitly requested and consistent with the reference person's actual appearance. Do not use them to replace or alter the person's identity.
+Apply these details only when explicitly requested and consistent with the reference person's actual appearance. Maintain the clean, isolated studio background with zero clutter. Do not use them to replace or alter the person's identity.
 
 ${customPrompt.trim()}`;
   }
