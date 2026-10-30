@@ -30,6 +30,7 @@ export const FREE_SHIPPING_THRESHOLD = 999;
 export const STANDARD_SHIPPING_FEE = 99;
 export const MIDNIGHT_DELIVERY_FEE = 199;
 export const EXPRESS_PRIORITY_FEE = 199;
+export const WEEKLY_KEEPSAKE_THRESHOLD = 5;
 const MAX_QUANTITY = 20;
 const MAX_LINE_ITEMS = 50;
 
@@ -239,6 +240,27 @@ export const computeOrderPricing = async ({ items, couponCode, deliverySlot }) =
           : `Sorry, "${product.name}" is out of stock`
       );
     }
+  }
+
+  // Enforce weekly studio threshold for custom 3D keepsakes
+  const customKeepsakeUnits = orderItems.reduce((sum, item) => {
+    const is3D = Boolean(
+      !item.fromCatalog ||
+      item.customization?.photoUrl ||
+      item.customization?.cuteImageUrl ||
+      (typeof item.name === "string" && (
+        item.name.toLowerCase().includes("3d") ||
+        item.name.toLowerCase().includes("keepsake") ||
+        item.name.toLowerCase().includes("figurine")
+      ))
+    );
+    return is3D ? sum + item.quantity : sum;
+  }, 0);
+
+  if (customKeepsakeUnits > WEEKLY_KEEPSAKE_THRESHOLD) {
+    throw new PricingError(
+      `Weekly studio production capacity exceeded. Maximum ${WEEKLY_KEEPSAKE_THRESHOLD} custom 3D keepsakes allowed per order.`
+    );
   }
 
   const itemsPrice = orderItems.reduce((sum, i) => sum + i.price * i.quantity, 0);
