@@ -121,5 +121,31 @@ router.put(
   })
 );
 
+// Turn custom (personalized) keepsakes on or off storefront-wide (admin only)
+router.get(
+  "/custom-keepsakes",
+  protect,
+  admin,
+  asyncHandler(async (req, res) => {
+    const settings = await StudioSettings.findOne({ key: "default" }).lean();
+    res.json({ success: true, enabled: settings?.customKeepsakesEnabled !== false });
+  })
+);
+
+router.put(
+  "/custom-keepsakes",
+  protect,
+  admin,
+  asyncHandler(async (req, res) => {
+    const enabled = Boolean(req.body.enabled);
+    await StudioSettings.findOneAndUpdate(
+      { key: "default" },
+      { $set: { customKeepsakesEnabled: enabled } },
+      { upsert: true, setDefaultsOnInsert: true }
+    );
+    res.json({ success: true, enabled });
+  })
+);
+
 export default router;
 

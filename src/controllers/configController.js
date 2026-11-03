@@ -1,3 +1,5 @@
+import StudioSettings from "../models/StudioSettings.js";
+
 let comingSoonOverride = null;
 
 export const setComingSoonOverride = (val) => {
@@ -20,8 +22,17 @@ export const getPublicConfig = async (req, res) => {
   const googleClientId = process.env.GOOGLE_CLIENT_ID || "";
   const razorpayKeyId = process.env.RAZORPAY_KEY_ID || "";
 
+  let customKeepsakesEnabled = true;
+  try {
+    const settings = await StudioSettings.findOne({ key: "default" }).select("customKeepsakesEnabled").lean();
+    if (settings && settings.customKeepsakesEnabled === false) customKeepsakesEnabled = false;
+  } catch (err) {
+    console.warn("[config] Could not read custom keepsake setting:", err.message);
+  }
+
   res.json({
     comingSoon,
+    customKeepsakesEnabled,
     googleClientId,
     razorpayKeyId,
   });

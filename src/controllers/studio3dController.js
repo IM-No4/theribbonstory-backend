@@ -279,7 +279,7 @@ export const getPrintColors = async (req, res) => {
   }
   return res.json({
     success: true,
-    availableColors: settings.availableColors || DEFAULT_PRINT_COLORS,
+    availableColors: settings.availableColors?.length ? settings.availableColors : DEFAULT_PRINT_COLORS,
     maxColorsPerModel: settings.maxColorsPerModel || 4,
   });
 };

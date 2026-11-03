@@ -5,6 +5,7 @@ import Coupon from "../models/Coupon.js";
 import { computeOrderPricing, PricingError } from "./pricingService.js";
 import { sendOrderConfirmationEmail } from "./emailService.js";
 import { alertNewOrder, checkLowStock } from "./studioAlerts.js";
+import StudioSettings from "../models/StudioSettings.js";
 import Reference3D from "../models/Reference3D.js";
 import { completeReferencePack, resolveUploadedImagePath } from "./gemini3dAgent.js";
 import { issueInvoice } from "./invoiceService.js";
@@ -109,6 +110,16 @@ export const buildOrderFields = async (body, user) => {
   } = body || {};
 
   if (!Array.isArray(items) || items.length === 0) throw new PricingError("Your cart is empty");
+  const hasCustomItem = items.some((i) => {
+    const c = i?.customization || {};
+    return Boolean(c.photoUrl || c.cuteImageUrl || c.reference3D || c.category || i?.sizeId);
+  });
+  if (hasCustomItem) {
+    const settings = await StudioSettings.findOne({ key: "default" }).select("customKeepsakesEnabled").lean();
+    if (settings?.customKeepsakesEnabled === false) {
+      throw new PricingError("Custom keepsakes are temporarily unavailable. Please remove them from your cart to continue.");
+    }
+  }
   if (!shippingAddress?.line1 || !shippingAddress?.city || !shippingAddress?.postalCode) {
     throw new PricingError("A complete shipping address is required");
   }

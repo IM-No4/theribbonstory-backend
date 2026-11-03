@@ -9,6 +9,7 @@ import {
   generateChibiFromUrl,
 } from "../services/chibiService.js";
 import Order from "../models/Order.js";
+import StudioSettings from "../models/StudioSettings.js";
 
 const router = express.Router();
 
@@ -25,7 +26,19 @@ const customerPhotoDir = path.join(path.dirname(fileURLToPath(import.meta.url)),
  * OR a JSON payload containing { photoUrl, prompt }
  * Permanently archives the customer's source photo and returns both photoUrl and cuteImageUrl
  */
-router.post("/generate", upload.single("photo"), async (req, res) => {
+const requireCustomKeepsakes = async (req, res, next) => {
+  try {
+    const settings = await StudioSettings.findOne({ key: "default" }).select("customKeepsakesEnabled").lean();
+    if (settings?.customKeepsakesEnabled === false) {
+      return res.status(403).json({ message: "Custom keepsakes are temporarily unavailable." });
+    }
+    next();
+  } catch (err) {
+    next(err);
+  }
+};
+
+router.post("/generate", requireCustomKeepsakes, upload.single("photo"), async (req, res) => {
   const engravingText = req.body?.engravingText?.trim();
   const artisanNotes = req.body?.artisanNotes?.trim();
   const style = req.body?.style?.trim() || "chibi";
