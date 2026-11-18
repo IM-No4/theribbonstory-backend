@@ -110,16 +110,6 @@ export const buildOrderFields = async (body, user) => {
   } = body || {};
 
   if (!Array.isArray(items) || items.length === 0) throw new PricingError("Your cart is empty");
-  const hasCustomItem = items.some((i) => {
-    const c = i?.customization || {};
-    return Boolean(c.photoUrl || c.cuteImageUrl || c.reference3D || c.category || i?.sizeId);
-  });
-  if (hasCustomItem) {
-    const settings = await StudioSettings.findOne({ key: "default" }).select("customKeepsakesEnabled").lean();
-    if (settings?.customKeepsakesEnabled === false) {
-      throw new PricingError("Custom keepsakes are temporarily unavailable. Please remove them from your cart to continue.");
-    }
-  }
   if (!shippingAddress?.line1 || !shippingAddress?.city || !shippingAddress?.postalCode) {
     throw new PricingError("A complete shipping address is required");
   }
@@ -129,6 +119,15 @@ export const buildOrderFields = async (body, user) => {
     couponCode,
     deliverySlot,
   });
+
+  const hasCustomItem = orderItems.some((i) => i.isCustomKeepsake);
+  if (hasCustomItem) {
+    const settings = await StudioSettings.findOne({ key: "default" }).select("customKeepsakesEnabled").lean();
+    if (settings?.customKeepsakesEnabled === false) {
+      throw new PricingError("Custom keepsakes are temporarily unavailable. Please remove them from your cart to continue.");
+    }
+  }
+
   await attachCustomizations(orderItems, items, user);
 
   // Dynamic realistic estimated delivery considering single printer queue & delivery slot
@@ -306,25 +305,19 @@ export const markOrderPaid = async ({ razorpayOrderId, razorpayPaymentId, razorp
  */
 export const isCustomKeepsakeItem = (item) => {
   if (!item) return false;
+  if (typeof item.isCustomKeepsake === "boolean") return item.isCustomKeepsake;
   const c = item.customization || {};
   return Boolean(
     c.photoUrl ||
     c.cuteImageUrl ||
     c.reference3D?.approvedPreview ||
     c.reference3D?.sessionId ||
-    c.category ||
-    c.customName ||
+    c.categorySlug ||
     item.fromCatalog === false ||
-    item.sizeId ||
     item.hamper?.keepsakeId === "3d-miniature" ||
     (typeof item.productId === "string" && (
       item.productId.startsWith("custom-3d-") ||
       item.productId.startsWith("keepsake-")
-    )) ||
-    (typeof item.name === "string" && (
-      item.name.toLowerCase().includes("3d") ||
-      item.name.toLowerCase().includes("keepsake") ||
-      item.name.toLowerCase().includes("figurine")
     ))
   );
 };

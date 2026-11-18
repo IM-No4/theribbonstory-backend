@@ -43,11 +43,13 @@ export async function getPrinterQueueStats() {
 
       for (const item of order.items || []) {
         const isCustom3D = Boolean(
+          item.isCustomKeepsake ||
           item.customization?.photoUrl ||
           item.customization?.cuteImageUrl ||
+          item.customization?.reference3D?.sessionId ||
           item.fromCatalog === false ||
-          item.sizeId ||
-          (item.name && item.name.toLowerCase().includes("3d"))
+          item.hamper?.keepsakeId === "3d-miniature" ||
+          (typeof item.productId === "string" && item.productId.startsWith("custom-3d-"))
         );
 
         const isPrinted = item.customization?.productionStatus === "printed";
@@ -102,12 +104,13 @@ export async function calculateDeliveryEstimate({
   if (Array.isArray(items) && items.length > 0) {
     for (const item of items) {
       const is3D = Boolean(
+        item.isCustomKeepsake ||
         item.customization?.photoUrl ||
         item.customization?.cuteImageUrl ||
+        item.customization?.reference3D?.sessionId ||
         item.fromCatalog === false ||
-        item.sizeId ||
         item.hamper?.keepsakeId === "3d-miniature" ||
-        (item.name && item.name.toLowerCase().includes("3d"))
+        (typeof item.productId === "string" && item.productId.startsWith("custom-3d-"))
       );
 
       if (is3D) {

@@ -120,16 +120,23 @@ export const computeOrderPricing = async ({ items, couponCode, deliverySlot }) =
     const product = productMap.get(rawId.slice(0, 24));
     let unitPrice;
     let selectedOptions;
-    const isCustom = Boolean(
-      item?.hamper ||
-      item?.sizeId ||
-      item?.customization?.size ||
-      item?.customization?.categorySlug ||
+
+    // A custom keepsake is an artisan-crafted item from photo/builder/customizable product or custom 3D hamper
+    const isCustomKeepsake = Boolean(
+      item?.hamper?.keepsakeId === "3d-miniature" ||
       rawId.startsWith("custom-3d-") ||
-      item?.customization?.photoUrl
+      rawId.startsWith("keepsake-") ||
+      item?.customization?.categorySlug ||
+      item?.customization?.photoUrl ||
+      item?.customization?.cuteImageUrl ||
+      item?.customization?.reference3D?.sessionId ||
+      item?.customization?.reference3D?.approvedPreview ||
+      (product && product.isCustomizable === true) ||
+      (!product && (item?.sizeId || item?.customization?.size))
     );
+
     let linkedProduct = product || customProduct;
-    if (!linkedProduct && isCustom) {
+    if (!linkedProduct && isCustomKeepsake) {
       linkedProduct = {
         _id: new mongoose.Types.ObjectId("660000000000000000000001"),
         name: String(item?.name || "Custom 3D Keepsake Figurine").slice(0, 200),
@@ -147,7 +154,12 @@ export const computeOrderPricing = async ({ items, couponCode, deliverySlot }) =
       }
       unitPrice = box + keepsake + addons.reduce((sum, a) => sum + HAMPER_CATALOG.addons[a], 0);
       selectedOptions = sanitizeOptions(item.selectedOptions);
-    } else if (item?.sizeId || item?.customization?.size || item?.customization?.categorySlug || rawId.startsWith("custom-3d-")) {
+    } else if (product && product.isActive !== false && !product.isCustomizable && rawId.length === 24) {
+      // Standard catalog products (desk buddies, collectibles, statues, lamps, etc.)
+      const { delta, resolved } = priceProductOptions(product, item.selectedOptions);
+      unitPrice = product.price + delta;
+      selectedOptions = resolved;
+    } else if (isCustomKeepsake) {
       const rawSize = String(item.sizeId || item.customization?.size || "").trim();
       const rawLower = rawSize.toLowerCase();
 
@@ -214,13 +226,14 @@ export const computeOrderPricing = async ({ items, couponCode, deliverySlot }) =
 
     return {
       product: linkedProduct._id,
-      fromCatalog: Boolean(product),
-      name: String(item.name || product?.name || (isCustom ? "Custom 3D Keepsake" : "Product")).slice(0, 200),
+      fromCatalog: Boolean(product && !rawId.startsWith("custom-3d-")),
+      name: String(item.name || product?.name || (isCustomKeepsake ? "Custom 3D Keepsake" : "Product")).slice(0, 200),
       image: item.image || item.customization?.photoUrl || linkedProduct.images?.[0] || "/images/chibi-showcase.webp",
       price: unitPrice,
       quantity,
       selectedOptions,
       customization: item.customization || {},
+      isCustomKeepsake,
     };
   });
 
@@ -244,17 +257,7 @@ export const computeOrderPricing = async ({ items, couponCode, deliverySlot }) =
 
   // Enforce weekly studio threshold for custom 3D keepsakes
   const customKeepsakeUnits = orderItems.reduce((sum, item) => {
-    const is3D = Boolean(
-      !item.fromCatalog ||
-      item.customization?.photoUrl ||
-      item.customization?.cuteImageUrl ||
-      (typeof item.name === "string" && (
-        item.name.toLowerCase().includes("3d") ||
-        item.name.toLowerCase().includes("keepsake") ||
-        item.name.toLowerCase().includes("figurine")
-      ))
-    );
-    return is3D ? sum + item.quantity : sum;
+    return item.isCustomKeepsake ? sum + item.quantity : sum;
   }, 0);
 
   if (customKeepsakeUnits > WEEKLY_KEEPSAKE_THRESHOLD) {
