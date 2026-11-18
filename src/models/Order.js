@@ -100,6 +100,8 @@ const orderSchema = new mongoose.Schema(
     trackingNumber: { type: String, default: "" },
     courierPartner: { type: String, default: "Express Delivery" },
     estimatedDelivery: { type: Date },
+    pickupScheduledDate: { type: Date },
+    deliveredAt: { type: Date },
     // Shiprocket Logistics Fields
     shiprocketOrderId: { type: String, default: "" },
     shiprocketShipmentId: { type: String, default: "" },

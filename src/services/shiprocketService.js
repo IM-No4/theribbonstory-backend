@@ -145,7 +145,7 @@ export const checkServiceability = async ({
 
     const data = await res.json();
     if (data?.status === 200 && data?.data?.available_courier_companies?.length > 0) {
-      const couriers = data.data.available_courier_companies;
+      const couriers = sortByCheapest(data.data.available_courier_companies);
       const recommended = couriers[0];
       const edd = new Date(recommended.etd || Date.now() + 3 * 86400000);
 
@@ -285,6 +285,41 @@ export const createShiprocketOrder = async (order) => {
   } catch (err) {
     console.error("Shiprocket order creation error:", err.message);
     throw err;
+  }
+};
+
+/** Cheapest freight first; faster delivery breaks ties */
+const sortByCheapest = (couriers) =>
+  [...couriers].sort(
+    (a, b) =>
+      (Number(a.rate) || Infinity) - (Number(b.rate) || Infinity) ||
+      (Number(a.estimated_delivery_days) || 99) - (Number(b.estimated_delivery_days) || 99)
+  );
+
+/**
+ * Find the cheapest courier Shiprocket offers for an order it already holds.
+ * Returns the courier_company_id, or undefined when mock mode / lookup fails
+ * (Shiprocket then falls back to its own default courier).
+ */
+export const getCheapestCourierId = async (shiprocketOrderId) => {
+  const token = await getShiprocketToken();
+  if (token.startsWith("mock_")) return undefined;
+
+  try {
+    const url = new URL(`${SHIPROCKET_BASE_URL}/courier/serviceability`);
+    url.searchParams.append("order_id", String(shiprocketOrderId));
+    const res = await fetch(url.toString(), {
+      headers: { "Content-Type": "application/json", Authorization: `Bearer ${token}` },
+    });
+    const data = await res.json().catch(() => ({}));
+    const couriers = data?.data?.available_courier_companies;
+    if (!Array.isArray(couriers) || couriers.length === 0) return undefined;
+    const cheapest = sortByCheapest(couriers)[0];
+    console.log(`[Shiprocket] Cheapest courier: ${cheapest.courier_name} @ ₹${cheapest.rate}`);
+    return cheapest.courier_company_id;
+  } catch (err) {
+    console.error("Shiprocket cheapest courier lookup failed:", err.message);
+    return undefined;
   }
 };
 
