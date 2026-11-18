@@ -1,7 +1,6 @@
 import Order from "../models/Order.js";
 import { getShiprocketOrderDetails } from "./shiprocketService.js";
 import { notifyStatusChange } from "./orderNotifications.js";
-import { restoreStock } from "./orderService.js";
 
 const POLL_INTERVAL_MS = 30 * 60 * 1000;
 
@@ -27,13 +26,16 @@ export const applyShipmentDates = (order, src = {}) => {
 export const applyShipmentStatus = async (order, statusUpper) => {
   const settled = ["delivered", "cancelled"].includes(order.status);
 
+  // A shipment cancelled on Shiprocket's side (e.g. to rebook a cheaper courier) is not a
+  // customer cancellation: send the order back to "ready" so it can be dispatched again.
   if (statusUpper.includes("CANCEL")) {
-    if (order.status === "cancelled") return false;
-    order.status = "cancelled";
+    if (order.status !== "shipped") return false;
+    order.status = "ready";
     order.shipmentStatus = "CANCELLED";
-    order.cancellationReason = "Cancelled via Shiprocket";
-    order.cancelledAt = new Date();
-    await restoreStock(order._id);
+    order.awbCode = "";
+    order.trackingNumber = "";
+    order.shippingLabelUrl = "";
+    order.pickupScheduledDate = undefined;
     return true;
   }
   if (settled) return false;

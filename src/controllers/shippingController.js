@@ -6,11 +6,13 @@ import {
   createShiprocketOrder,
   getCheapestCourierId,
   generateAWB,
+  schedulePickup,
+  listCouriers,
   generateShippingLabel,
   trackShipment as trackShiprocketShipment,
 } from "../services/shiprocketService.js";
 import { notifyStatusChange } from "../services/orderNotifications.js";
-import { applyShipmentStatus, applyShipmentDates, syncOrderWithShiprocket } from "../services/shipmentSync.js";
+import { applyShipmentStatus, applyShipmentDates, parseShiprocketDate, syncOrderWithShiprocket } from "../services/shipmentSync.js";
 
 import { calculateDeliveryEstimate } from "../services/deliveryEstimateService.js";
 
@@ -233,6 +235,41 @@ export const trackOrderShipment = async (req, res) => {
 };
 
 /**
+ * Courier options (with prices) for dispatching an order (Admin).
+ * `suggestedId` follows what the customer paid for: express/midnight slots
+ * get the fastest courier, everything else the cheapest standard one.
+ */
+export const getCourierOptions = async (req, res) => {
+  try {
+    const order = await Order.findById(req.params.orderId);
+    if (!order) return res.status(404).json({ message: "Order not found" });
+
+    const couriers = await listCouriers({
+      deliveryPincode: order.shippingAddress?.postalCode,
+      cod: order.paymentMethod === "cod" ? 1 : 0,
+    });
+
+    const slot = String(order.deliverySlot || "").toLowerCase();
+    const wantsFast = slot.includes("express") || slot.includes("midnight");
+    const pool = couriers.filter((c) => !c.premium);
+    const candidates = pool.length ? pool : couriers;
+    const suggested = wantsFast
+      ? [...candidates].sort((a, b) => (a.days ?? 99) - (b.days ?? 99) || a.rate - b.rate)[0]
+      : candidates[0];
+
+    return res.json({
+      success: true,
+      deliverySlot: order.deliverySlot,
+      suggestedId: suggested?.id ?? null,
+      couriers,
+    });
+  } catch (err) {
+    console.error("Courier options error:", err);
+    return res.status(500).json({ message: err.message || "Failed to load courier options" });
+  }
+};
+
+/**
  * 3. Create Shiprocket Shipment & Generate AWB (Admin)
  */
 export const createShipment = async (req, res) => {
@@ -267,8 +304,11 @@ export const createShipment = async (req, res) => {
     }
 
     // Step 2: Generate AWB
-    const courierId = await getCheapestCourierId(srOrderResult.order_id);
+    const courierId = Number(req.body?.courierId) || (await getCheapestCourierId(srOrderResult.order_id));
     const awbResult = await generateAWB(srOrderResult.shipment_id, courierId);
+
+    // Step 2b: Book the courier pickup
+    const pickupRaw = await schedulePickup(srOrderResult.shipment_id);
 
     // Step 3: Generate Shipping Label
     const labelResult = await generateShippingLabel(srOrderResult.shipment_id);
@@ -283,6 +323,7 @@ export const createShipment = async (req, res) => {
     order.shippingLabelUrl = labelResult.label_url;
     order.status = "shipped";
     order.shipmentStatus = "AWB_ASSIGNED";
+    order.pickupScheduledDate = parseShiprocketDate(pickupRaw) || order.pickupScheduledDate;
 
     await order.save();
 

@@ -3,6 +3,7 @@ import {
   checkPincode,
   trackOrderShipment,
   createShipment,
+  getCourierOptions,
   getShippingLabelPdf,
   handleWebhook,
   syncShiprocketStatus,
@@ -20,6 +21,7 @@ router.post("/tracking", handleWebhook);
 router.post("/notify", handleWebhook);
 
 // Protected Admin Routes (Shiprocket Fulfillment)
+router.get("/couriers/:orderId", protect, admin, getCourierOptions);
 router.post("/create-shipment/:orderId", protect, admin, createShipment);
 router.get("/label/:orderId", protect, admin, getShippingLabelPdf);
 router.post("/sync/:orderId", protect, admin, syncShiprocketStatus);

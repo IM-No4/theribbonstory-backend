@@ -288,13 +288,94 @@ export const createShiprocketOrder = async (order) => {
   }
 };
 
-/** Cheapest freight first; faster delivery breaks ties */
-const sortByCheapest = (couriers) =>
-  [...couriers].sort(
+/** Same-day / instant services cost far more than standard surface or air delivery */
+const PREMIUM_COURIER = /instant|hyperlocal|same.?day|quick|express plus/i;
+
+/** Cheapest freight first, skipping premium services; faster delivery breaks ties */
+const sortByCheapest = (couriers) => {
+  const standard = couriers.filter((c) => !PREMIUM_COURIER.test(c.courier_name || ""));
+  return [...(standard.length ? standard : couriers)].sort(
     (a, b) =>
       (Number(a.rate) || Infinity) - (Number(b.rate) || Infinity) ||
       (Number(a.estimated_delivery_days) || 99) - (Number(b.estimated_delivery_days) || 99)
   );
+};
+
+/**
+ * Every courier Shiprocket offers for a route, cheapest first.
+ * Returns [] when nothing is serviceable or the lookup fails.
+ */
+export const listCouriers = async ({
+  deliveryPincode,
+  pickupPincode = process.env.SHIPROCKET_PICKUP_PINCODE || "560001",
+  weight = 0.6,
+  cod = 0,
+}) => {
+  const token = await getShiprocketToken();
+
+  if (token.startsWith("mock_")) {
+    const day = 86400000;
+    return [
+      { id: 1, name: "Surface Standard", mode: "Surface", rate: 59, days: 5, etd: new Date(Date.now() + 5 * day).toISOString(), rating: 4.2, premium: false },
+      { id: 2, name: "Air Express", mode: "Air", rate: 96, days: 2, etd: new Date(Date.now() + 2 * day).toISOString(), rating: 4.5, premium: false },
+      { id: 3, name: "Instant pickup - Shadowfax", mode: "Air", rate: 140, days: 1, etd: new Date(Date.now() + day).toISOString(), rating: 4.0, premium: true },
+    ];
+  }
+
+  try {
+    const url = new URL(`${SHIPROCKET_BASE_URL}/courier/serviceability`);
+    url.searchParams.append("pickup_postcode", pickupPincode);
+    url.searchParams.append("delivery_postcode", String(deliveryPincode).trim());
+    url.searchParams.append("weight", String(weight));
+    url.searchParams.append("cod", String(cod));
+    const res = await fetch(url.toString(), {
+      headers: { "Content-Type": "application/json", Authorization: `Bearer ${token}` },
+    });
+    const data = await res.json().catch(() => ({}));
+    const couriers = data?.data?.available_courier_companies;
+    if (!Array.isArray(couriers)) return [];
+
+    return [...couriers]
+      .sort((a, b) => (Number(a.rate) || Infinity) - (Number(b.rate) || Infinity))
+      .map((c) => ({
+        id: c.courier_company_id,
+        name: c.courier_name,
+        mode: c.is_surface ? "Surface" : "Air",
+        rate: Number(c.rate) || 0,
+        days: Number(c.estimated_delivery_days) || null,
+        etd: c.etd || null,
+        rating: c.rating,
+        premium: PREMIUM_COURIER.test(c.courier_name || ""),
+      }));
+  } catch (err) {
+    console.error("Shiprocket courier list error:", err.message);
+    return [];
+  }
+};
+
+/**
+ * Ask Shiprocket to schedule the courier pickup for a shipment.
+ * Returns the scheduled pickup Date, or undefined (mock mode, already scheduled, or failure).
+ */
+export const schedulePickup = async (shipmentId) => {
+  const token = await getShiprocketToken();
+  if (token.startsWith("mock_")) return undefined;
+
+  try {
+    const res = await fetch(`${SHIPROCKET_BASE_URL}/courier/generate/pickup`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json", Authorization: `Bearer ${token}` },
+      body: JSON.stringify({ shipment_id: [Number(shipmentId)] }),
+    });
+    const data = await res.json().catch(() => ({}));
+    const raw = data?.response?.pickup_scheduled_date || data?.pickup_scheduled_date;
+    if (!raw) console.warn("[Shiprocket] Pickup not scheduled:", data?.message || data?.response?.data || res.status);
+    return raw;
+  } catch (err) {
+    console.warn("[Shiprocket] Pickup scheduling failed:", err.message);
+    return undefined;
+  }
+};
 
 /**
  * Find the cheapest courier Shiprocket offers for an order it already holds.
