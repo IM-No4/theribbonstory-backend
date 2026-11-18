@@ -63,8 +63,18 @@ export const applyShipmentStatus = async (order, statusUpper) => {
 export const syncOrderWithShiprocket = async (order) => {
   const { data: srData } = await getShiprocketOrderDetails(order.shiprocketOrderId);
   const shipment = Array.isArray(srData.shipments) ? srData.shipments[0] : srData.shipments;
-  const srStatus = String(srData.status || shipment?.status || "").toUpperCase();
+  const orderLevel = String(srData.status || "").toUpperCase();
+  const shipmentLevel = String(shipment?.status || "").toUpperCase();
+  // Cancelling just the shipment (AWB) leaves the Shiprocket order itself open, so look at
+  // the shipment status and at whether the AWB we hold is still attached to it.
+  const awbDropped = Boolean(order.awbCode) && shipment && "awb" in shipment && !shipment.awb;
+  const srStatus = orderLevel.includes("CANCEL")
+    ? orderLevel
+    : shipmentLevel.includes("CANCEL") || awbDropped
+      ? "CANCELED"
+      : orderLevel || shipmentLevel;
   const prevStatus = order.status;
+  console.log(`[ShipmentSync] ${order._id} order="${orderLevel}" shipment="${shipmentLevel}" awb="${shipment?.awb ?? ""}" -> ${srStatus}`);
 
   await applyShipmentStatus(order, srStatus);
   applyShipmentDates(order, { ...srData, ...shipment });
