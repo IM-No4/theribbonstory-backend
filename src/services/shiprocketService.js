@@ -256,7 +256,7 @@ export const createShiprocketOrder = async (order) => {
     length: 15,
     breadth: 15,
     height: 10,
-    weight: 0.6,
+    weight: 0.5,
   };
 
   try {
@@ -308,7 +308,7 @@ const sortByCheapest = (couriers) => {
 export const listCouriers = async ({
   deliveryPincode,
   pickupPincode = process.env.SHIPROCKET_PICKUP_PINCODE || "560001",
-  weight = 0.6,
+  weight = 0.5,
   cod = 0,
 }) => {
   const token = await getShiprocketToken();
