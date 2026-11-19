@@ -180,6 +180,7 @@ const sanitizeTheme = (b = {}) => {
     images: (Array.isArray(b.images) ? b.images : []).filter(hostedImage).slice(0, 5),
     mobileImages: (Array.isArray(b.mobileImages) ? b.mobileImages : []).filter(hostedImage).slice(0, 5),
     pageBackground: hostedImage(b.pageBackground) ? b.pageBackground : "",
+    collectionSlug: typeof b.collectionSlug === "string" && /^[a-z0-9-]{1,80}$/.test(b.collectionSlug) ? b.collectionSlug : "",
   };
 };
 

@@ -41,6 +41,7 @@ const studioSettingsSchema = new mongoose.Schema(
       images: [{ type: String }],
       mobileImages: [{ type: String }],
       pageBackground: { type: String, default: "" },
+      collectionSlug: { type: String, default: "" },
     },
     heroThemeDrafts: { type: mongoose.Schema.Types.Mixed, default: {} },
     orderNotificationEmails: [{ type: String, trim: true, lowercase: true }],
