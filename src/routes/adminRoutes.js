@@ -147,5 +147,50 @@ router.put(
   })
 );
 
+// Seasonal hero theme for the home page (admin only)
+const HERO_PRESETS = ["custom", "christmas", "newyear", "diwali", "valentine"];
+const heroText = (value, max) => (typeof value === "string" ? value.trim().slice(0, max) : "");
+const hostedImage = (value) => typeof value === "string" && /^\/(uploads|images)\/[\w./-]+$/.test(value);
+
+router.get(
+  "/hero-theme",
+  protect,
+  admin,
+  asyncHandler(async (req, res) => {
+    const settings = await StudioSettings.findOne({ key: "default" }).select("heroTheme").lean();
+    res.json({ success: true, heroTheme: settings?.heroTheme || { enabled: false } });
+  })
+);
+
+router.put(
+  "/hero-theme",
+  protect,
+  admin,
+  asyncHandler(async (req, res) => {
+    const b = req.body || {};
+    const ctaLink = heroText(b.ctaLink, 200);
+    const heroTheme = {
+      enabled: Boolean(b.enabled),
+      preset: HERO_PRESETS.includes(b.preset) ? b.preset : "custom",
+      badge: heroText(b.badge, 60),
+      headline: heroText(b.headline, 60),
+      highlight: heroText(b.highlight, 60),
+      subtext: heroText(b.subtext, 240),
+      overlayText: heroText(b.overlayText, 90),
+      ctaText: heroText(b.ctaText, 40),
+      ctaLink: ctaLink.startsWith("/") && !ctaLink.startsWith("//") ? ctaLink : "/shop",
+      bannerText: heroText(b.bannerText, 140),
+      images: (Array.isArray(b.images) ? b.images : []).filter(hostedImage).slice(0, 5),
+      mobileImages: (Array.isArray(b.mobileImages) ? b.mobileImages : []).filter(hostedImage).slice(0, 5),
+    };
+    await StudioSettings.findOneAndUpdate(
+      { key: "default" },
+      { $set: { heroTheme } },
+      { upsert: true, setDefaultsOnInsert: true }
+    );
+    res.json({ success: true, heroTheme });
+  })
+);
+
 export default router;
 

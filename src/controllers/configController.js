@@ -23,9 +23,14 @@ export const getPublicConfig = async (req, res) => {
   const razorpayKeyId = process.env.RAZORPAY_KEY_ID || "";
 
   let customKeepsakesEnabled = true;
+  let heroTheme = null;
   try {
-    const settings = await StudioSettings.findOne({ key: "default" }).select("customKeepsakesEnabled").lean();
+    const settings = await StudioSettings.findOne({ key: "default" }).select("customKeepsakesEnabled heroTheme").lean();
     if (settings && settings.customKeepsakesEnabled === false) customKeepsakesEnabled = false;
+    if (settings?.heroTheme?.enabled) {
+      const { enabled, ...theme } = settings.heroTheme;
+      heroTheme = theme;
+    }
   } catch (err) {
     console.warn("[config] Could not read custom keepsake setting:", err.message);
   }
@@ -33,6 +38,7 @@ export const getPublicConfig = async (req, res) => {
   res.json({
     comingSoon,
     customKeepsakesEnabled,
+    heroTheme,
     googleClientId,
     razorpayKeyId,
   });

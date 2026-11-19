@@ -26,6 +26,21 @@ const studioSettingsSchema = new mongoose.Schema(
     ],
     maxColorsPerModel: { type: Number, default: 4 },
     customKeepsakesEnabled: { type: Boolean, default: true },
+    // Seasonal home page hero (e.g. Christmas); when disabled the standard hero is shown
+    heroTheme: {
+      enabled: { type: Boolean, default: false },
+      preset: { type: String, default: "custom" },
+      badge: { type: String, default: "" },
+      headline: { type: String, default: "" },
+      highlight: { type: String, default: "" },
+      subtext: { type: String, default: "" },
+      overlayText: { type: String, default: "" },
+      ctaText: { type: String, default: "" },
+      ctaLink: { type: String, default: "/shop" },
+      bannerText: { type: String, default: "" },
+      images: [{ type: String }],
+      mobileImages: [{ type: String }],
+    },
     orderNotificationEmails: [{ type: String, trim: true, lowercase: true }],
   },
   { timestamps: true }
