@@ -182,6 +182,7 @@ router.put(
       bannerText: heroText(b.bannerText, 140),
       images: (Array.isArray(b.images) ? b.images : []).filter(hostedImage).slice(0, 5),
       mobileImages: (Array.isArray(b.mobileImages) ? b.mobileImages : []).filter(hostedImage).slice(0, 5),
+      pageBackground: hostedImage(b.pageBackground) ? b.pageBackground : "",
     };
     await StudioSettings.findOneAndUpdate(
       { key: "default" },

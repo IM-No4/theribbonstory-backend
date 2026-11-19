@@ -40,6 +40,7 @@ const studioSettingsSchema = new mongoose.Schema(
       bannerText: { type: String, default: "" },
       images: [{ type: String }],
       mobileImages: [{ type: String }],
+      pageBackground: { type: String, default: "" },
     },
     orderNotificationEmails: [{ type: String, trim: true, lowercase: true }],
   },
