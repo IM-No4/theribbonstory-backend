@@ -157,10 +157,31 @@ router.get(
   protect,
   admin,
   asyncHandler(async (req, res) => {
-    const settings = await StudioSettings.findOne({ key: "default" }).select("heroTheme").lean();
-    res.json({ success: true, heroTheme: settings?.heroTheme || { enabled: false } });
+    const settings = await StudioSettings.findOne({ key: "default" }).select("heroTheme heroThemeDrafts").lean();
+    res.json({
+      success: true,
+      heroTheme: settings?.heroTheme || { enabled: false },
+      drafts: settings?.heroThemeDrafts || {},
+    });
   })
 );
+
+const sanitizeTheme = (b = {}) => {
+  const ctaLink = heroText(b.ctaLink, 200);
+  return {
+    badge: heroText(b.badge, 60),
+    headline: heroText(b.headline, 60),
+    highlight: heroText(b.highlight, 60),
+    subtext: heroText(b.subtext, 240),
+    overlayText: heroText(b.overlayText, 90),
+    ctaText: heroText(b.ctaText, 40),
+    ctaLink: ctaLink.startsWith("/") && !ctaLink.startsWith("//") ? ctaLink : "/shop",
+    bannerText: heroText(b.bannerText, 140),
+    images: (Array.isArray(b.images) ? b.images : []).filter(hostedImage).slice(0, 5),
+    mobileImages: (Array.isArray(b.mobileImages) ? b.mobileImages : []).filter(hostedImage).slice(0, 5),
+    pageBackground: hostedImage(b.pageBackground) ? b.pageBackground : "",
+  };
+};
 
 router.put(
   "/hero-theme",
@@ -168,28 +189,24 @@ router.put(
   admin,
   asyncHandler(async (req, res) => {
     const b = req.body || {};
-    const ctaLink = heroText(b.ctaLink, 200);
-    const heroTheme = {
-      enabled: Boolean(b.enabled),
-      preset: HERO_PRESETS.includes(b.preset) ? b.preset : "custom",
-      badge: heroText(b.badge, 60),
-      headline: heroText(b.headline, 60),
-      highlight: heroText(b.highlight, 60),
-      subtext: heroText(b.subtext, 240),
-      overlayText: heroText(b.overlayText, 90),
-      ctaText: heroText(b.ctaText, 40),
-      ctaLink: ctaLink.startsWith("/") && !ctaLink.startsWith("//") ? ctaLink : "/shop",
-      bannerText: heroText(b.bannerText, 140),
-      images: (Array.isArray(b.images) ? b.images : []).filter(hostedImage).slice(0, 5),
-      mobileImages: (Array.isArray(b.mobileImages) ? b.mobileImages : []).filter(hostedImage).slice(0, 5),
-      pageBackground: hostedImage(b.pageBackground) ? b.pageBackground : "",
-    };
+    const preset = HERO_PRESETS.includes(b.preset) ? b.preset : "custom";
+    const heroTheme = { enabled: Boolean(b.enabled), preset, ...sanitizeTheme(b) };
+
+    // Every theme keeps its own saved images and text.
+    const drafts = {};
+    const incoming = b.drafts && typeof b.drafts === "object" ? b.drafts : {};
+    for (const key of HERO_PRESETS) {
+      if (incoming[key]) drafts[key] = sanitizeTheme(incoming[key]);
+    }
+    const { enabled, preset: _p, ...activeFields } = heroTheme;
+    drafts[preset] = activeFields;
+
     await StudioSettings.findOneAndUpdate(
       { key: "default" },
-      { $set: { heroTheme } },
+      { $set: { heroTheme, heroThemeDrafts: drafts } },
       { upsert: true, setDefaultsOnInsert: true }
     );
-    res.json({ success: true, heroTheme });
+    res.json({ success: true, heroTheme, drafts });
   })
 );
 
