@@ -181,6 +181,26 @@ describe("calculateCouponDiscount", () => {
     assert.deepEqual(calculateCouponDiscount(coupon, 300), { discount: 300 });
   });
 
+  it("free delivery removes exactly the standard charge, whatever it is", () => {
+    const coupon = { code: "SHIP", discountType: "free_shipping" };
+    for (const fee of [78, 99]) {
+      assert.deepEqual(calculateCouponDiscount(coupon, 500, { standard: fee, express: 199, midnight: 0, total: fee + 199 }), { discount: fee });
+    }
+  });
+
+  it("free delivery waives express and midnight only when the coupon allows it", () => {
+    const delivery = { standard: 99, express: 199, midnight: 150, total: 448 };
+    const coupon = { code: "SHIP", discountType: "free_shipping", coversExpress: true, coversMidnight: true };
+    assert.deepEqual(calculateCouponDiscount(coupon, 500, delivery), { discount: 448 });
+    assert.deepEqual(calculateCouponDiscount({ ...coupon, coversMidnight: false }, 500, delivery), { discount: 298 });
+  });
+
+  it("refuses free delivery when there is nothing to waive", () => {
+    const coupon = { code: "SHIP", discountType: "free_shipping" };
+    assert.match(calculateCouponDiscount(coupon, 2000, { standard: 0, express: 0, midnight: 0, total: 0 }).error, /already free/);
+    assert.match(calculateCouponDiscount(coupon, 2000, { standard: 0, express: 199, midnight: 0, total: 199 }).error, /does not cover/);
+  });
+
   it("rejects expired and exhausted coupons", () => {
     const base = { code: "X", discountType: "fixed", discountAmount: 10 };
     assert.match(calculateCouponDiscount({ ...base, validUntil: new Date(Date.now() - 1000) }, 100).error, /expired/);

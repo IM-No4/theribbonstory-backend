@@ -1,8 +1,9 @@
 import Coupon from "../models/Coupon.js";
-import { calculateCouponDiscount } from "../services/pricingService.js";
+import { calculateCouponDiscount, deliveryCharges } from "../services/pricingService.js";
+import { getShippingSettings } from "../services/shippingSettings.js";
 
 export const applyCoupon = async (req, res) => {
-  const { code, subtotal } = req.body;
+  const { code, subtotal, deliverySlot } = req.body;
   if (!code) return res.status(400).json({ message: "Coupon code is required" });
 
   const cleanCode = String(code).trim().toUpperCase();
@@ -12,7 +13,12 @@ export const applyCoupon = async (req, res) => {
     return res.status(404).json({ message: `Coupon "${cleanCode}" is invalid or expired` });
   }
 
-  const { discount, error } = calculateCouponDiscount(coupon, Number(subtotal) || 0);
+  const amount = Number(subtotal) || 0;
+  const delivery =
+    coupon.discountType === "free_shipping"
+      ? deliveryCharges(amount, deliverySlot, await getShippingSettings())
+      : undefined;
+  const { discount, error } = calculateCouponDiscount(coupon, amount, delivery);
   if (error) return res.status(400).json({ message: error });
 
   return res.json({
@@ -31,7 +37,7 @@ export const getAvailableCoupons = async (req, res) => {
     isActive: true,
     $or: [{ validUntil: { $exists: false } }, { validUntil: null }, { validUntil: { $gte: now } }],
   })
-    .select("code description discountType discountAmount minOrderAmount maxDiscount validUntil")
+    .select("code description discountType discountAmount minOrderAmount maxDiscount validUntil coversExpress coversMidnight")
     .sort({ discountAmount: -1 });
   return res.json({ coupons });
 };
@@ -65,9 +71,12 @@ export const createCoupon = async (req, res) => {
     usageLimit,
     validUntil,
     isActive,
+    coversExpress,
+    coversMidnight,
   } = req.body;
 
-  if (!code || discountAmount === undefined) {
+  const freeDelivery = discountType === "free_shipping";
+  if (!code || (!freeDelivery && !(Number(discountAmount) > 0))) {
     return res.status(400).json({ message: "Coupon code and discount amount are required" });
   }
 
@@ -81,7 +90,9 @@ export const createCoupon = async (req, res) => {
     code: cleanCode,
     description: description || "",
     discountType: discountType || "fixed",
-    discountAmount: Number(discountAmount),
+    discountAmount: freeDelivery ? 0 : Number(discountAmount),
+    coversExpress: freeDelivery && Boolean(coversExpress),
+    coversMidnight: freeDelivery && Boolean(coversMidnight),
     minOrderAmount: Number(minOrderAmount) || 0,
     maxDiscount: Number(maxDiscount) || 0,
     usageLimit: Number(usageLimit) || 1000,
@@ -107,6 +118,8 @@ export const updateCoupon = async (req, res) => {
     usageLimit,
     validUntil,
     isActive,
+    coversExpress,
+    coversMidnight,
   } = req.body;
 
   if (code) {
@@ -125,6 +138,15 @@ export const updateCoupon = async (req, res) => {
   if (usageLimit !== undefined) coupon.usageLimit = Number(usageLimit);
   if (validUntil !== undefined) coupon.validUntil = validUntil ? new Date(validUntil) : undefined;
   if (isActive !== undefined) coupon.isActive = Boolean(isActive);
+  if (coversExpress !== undefined) coupon.coversExpress = Boolean(coversExpress);
+  if (coversMidnight !== undefined) coupon.coversMidnight = Boolean(coversMidnight);
+  if (coupon.discountType === "free_shipping") {
+    coupon.discountAmount = 0;
+  } else {
+    coupon.coversExpress = false;
+    coupon.coversMidnight = false;
+    if (!(coupon.discountAmount > 0)) return res.status(400).json({ message: "Enter a discount value above 0" });
+  }
 
   await coupon.save();
   return res.json({ coupon, message: "Coupon updated successfully" });

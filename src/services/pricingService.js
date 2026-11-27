@@ -42,7 +42,16 @@ export class PricingError extends Error {
 /**
  * Coupon discount for a given subtotal. Returns { discount } or { error }.
  */
-export const calculateCouponDiscount = (coupon, subtotal) => {
+/** Delivery charge for an order, split so coupons can waive each part separately */
+export const deliveryCharges = (itemsPrice, deliverySlot, settings) => {
+  const slot = typeof deliverySlot === "string" ? deliverySlot.toLowerCase() : "";
+  const standard = itemsPrice >= settings.freeShippingThreshold ? 0 : settings.standardFee;
+  const express = slot.includes("express") ? settings.expressFee : 0;
+  const midnight = slot.includes("midnight") ? settings.midnightFee : 0;
+  return { standard, express, midnight, total: standard + express + midnight };
+};
+
+export const calculateCouponDiscount = (coupon, subtotal, delivery) => {
   if (!coupon) return { error: "Coupon is invalid or expired" };
   if (coupon.validUntil && new Date(coupon.validUntil) < new Date()) {
     return { error: `Coupon "${coupon.code}" has expired` };
@@ -55,7 +64,20 @@ export const calculateCouponDiscount = (coupon, subtotal) => {
   }
 
   let discount = 0;
-  if (coupon.discountType === "percentage") {
+  if (coupon.discountType === "free_shipping") {
+    discount =
+      (delivery?.standard || 0) +
+      (coupon.coversExpress ? delivery?.express || 0 : 0) +
+      (coupon.coversMidnight ? delivery?.midnight || 0 : 0);
+    if (discount <= 0) {
+      return {
+        error: delivery?.total > 0
+          ? `Coupon ${coupon.code} does not cover express or midnight delivery charges`
+          : "Delivery is already free on this order",
+      };
+    }
+    if (coupon.maxDiscount > 0 && discount > coupon.maxDiscount) discount = coupon.maxDiscount;
+  } else if (coupon.discountType === "percentage") {
     discount = Math.round((subtotal * coupon.discountAmount) / 100);
     if (coupon.maxDiscount > 0 && discount > coupon.maxDiscount) discount = coupon.maxDiscount;
   } else {
@@ -268,21 +290,15 @@ export const computeOrderPricing = async ({ items, couponCode, deliverySlot }) =
 
   const itemsPrice = orderItems.reduce((sum, i) => sum + i.price * i.quantity, 0);
 
-  const shipping = await getShippingSettings();
-  let shippingPrice = itemsPrice >= shipping.freeShippingThreshold ? 0 : shipping.standardFee;
-  if (typeof deliverySlot === "string" && deliverySlot.toLowerCase().includes("midnight")) {
-    shippingPrice += shipping.midnightFee;
-  }
-  if (typeof deliverySlot === "string" && deliverySlot.toLowerCase().includes("express")) {
-    shippingPrice += shipping.expressFee;
-  }
+  const delivery = deliveryCharges(itemsPrice, deliverySlot, await getShippingSettings());
+  const shippingPrice = delivery.total;
 
   let coupon = null;
   let discountPrice = 0;
   if (couponCode) {
     const cleanCode = String(couponCode).trim().toUpperCase();
     coupon = await Coupon.findOne({ code: cleanCode, isActive: true });
-    const result = calculateCouponDiscount(coupon, itemsPrice);
+    const result = calculateCouponDiscount(coupon, itemsPrice, delivery);
     if (result.error) throw new PricingError(coupon ? result.error : `Coupon "${cleanCode}" is invalid or expired`);
     discountPrice = result.discount;
   }
