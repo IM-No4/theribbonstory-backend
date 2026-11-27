@@ -12,6 +12,7 @@ import { setComingSoonOverride, isComingSoonActive } from "../controllers/config
 
 import StudioSettings from "../models/StudioSettings.js";
 import { getShippingSettings, parseShippingSettings } from "../services/shippingSettings.js";
+import { buildReport } from "../services/analyticsReport.js";
 import { getStudioRecipients, sendTestOrderAlert } from "../services/studioAlerts.js";
 
 // Send a test email to the signed-in admin to check the SMTP settings
@@ -145,6 +146,16 @@ router.put(
       { upsert: true, setDefaultsOnInsert: true }
     );
     res.json({ success: true, enabled });
+  })
+);
+
+// Store performance: visits, products, funnel and ad sources (admin only)
+router.get(
+  "/analytics",
+  protect,
+  admin,
+  asyncHandler(async (req, res) => {
+    res.json({ success: true, report: await buildReport(String(req.query.range || "7d")) });
   })
 );
 

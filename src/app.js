@@ -29,6 +29,7 @@ import configRoutes from "./routes/configRoutes.js";
 import studio3dRoutes from "./routes/studio3dRoutes.js";
 import chibiRoutes from "./routes/chibiRoutes.js";
 import keepsakeCategoryRoutes from "./routes/keepsakeCategoryRoutes.js";
+import insightsRoutes from "./routes/insightsRoutes.js";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 dotenv.config({ path: path.join(__dirname, "..", ".env") });
@@ -136,6 +137,8 @@ app.get("/api/health", (req, res) =>
 app.use(seoRoutes);
 
 // 9. API Routes with rate limiters
+// Storefront analytics, mounted first: it has its own rate limit
+app.use("/api/insights", insightsRoutes);
 app.use("/api", apiLimiter);
 app.use("/api/auth", authLimiter, authRoutes);
 app.use("/api/products", productRoutes);
