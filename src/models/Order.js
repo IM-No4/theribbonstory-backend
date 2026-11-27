@@ -10,6 +10,8 @@ const orderItemSchema = new mongoose.Schema(
     image: String,
     price: { type: Number, required: true },
     quantity: { type: Number, required: true, default: 1 },
+    // Stock pieces in one unit ("Set of 4" = 4); recorded so cancellations give back what was taken
+    piecesPerUnit: { type: Number, default: 1 },
     selectedOptions: [{ name: String, value: String, priceDelta: Number }],
     customization: {
       photoUrl: String,

@@ -1,4 +1,5 @@
 import Product from "../models/Product.js";
+import { stockPieces } from "../utils/packSize.js";
 import StudioSettings from "../models/StudioSettings.js";
 import { getTransporter, EMAIL_SENDERS } from "./emailService.js";
 import { escapeHtml as esc } from "../utils/security.js";
@@ -159,7 +160,7 @@ export const checkLowStock = async (items) => {
   for (const item of items || []) {
     if (!item.fromCatalog || !item.product) continue;
     const id = String(item.product);
-    taken.set(id, (taken.get(id) || 0) + item.quantity);
+    taken.set(id, (taken.get(id) || 0) + stockPieces(item));
   }
   if (taken.size === 0) return;
 

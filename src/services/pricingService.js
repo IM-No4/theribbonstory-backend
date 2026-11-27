@@ -4,6 +4,7 @@ import Coupon from "../models/Coupon.js";
 import KeepsakeCategory from "../models/KeepsakeCategory.js";
 import { isObjectId } from "../utils/security.js";
 import { getShippingSettings } from "./shippingSettings.js";
+import { piecesPerUnit, stockPieces } from "../utils/packSize.js";
 
 /**
  * Server-side price catalog for configurable items that are not stored as
@@ -69,8 +70,9 @@ const priceProductOptions = (product, selectedOptions) => {
   for (const opt of Array.isArray(selectedOptions) ? selectedOptions : []) {
     const group = (product.optionGroups || []).find((g) => g.name === opt?.name);
     const value = group?.values?.find((v) => v.label === opt?.value);
-    if (group && !value) throw new PricingError(`"${opt.value}" is not a valid ${group.name} for ${product.name}`);
-    const priceDelta = value ? Number(value.priceDelta) || 0 : 0;
+    if (!group) continue;
+    if (!value) throw new PricingError(`"${opt.value}" is not a valid ${group.name} for ${product.name}`);
+    const priceDelta = Number(value.priceDelta) || 0;
     delta += priceDelta;
     resolved.push({ name: String(opt?.name ?? ""), value: String(opt?.value ?? ""), priceDelta });
   }
@@ -228,6 +230,7 @@ export const computeOrderPricing = async ({ items, couponCode, deliverySlot }) =
       image: item.image || item.customization?.photoUrl || linkedProduct.images?.[0] || "/images/chibi-showcase.webp",
       price: unitPrice,
       quantity,
+      piecesPerUnit: piecesPerUnit(selectedOptions),
       selectedOptions,
       customization: item.customization || {},
       isCustomKeepsake,
@@ -239,14 +242,14 @@ export const computeOrderPricing = async ({ items, couponCode, deliverySlot }) =
   for (const item of orderItems) {
     if (!item.fromCatalog) continue;
     const id = String(item.product);
-    wanted.set(id, (wanted.get(id) || 0) + item.quantity);
+    wanted.set(id, (wanted.get(id) || 0) + stockPieces(item));
   }
   for (const [id, quantity] of wanted) {
     const product = productMap.get(id);
     if (product && typeof product.stock === "number" && product.stock < quantity) {
       throw new PricingError(
         product.stock > 0
-          ? `Sorry, only ${product.stock} of "${product.name}" left in stock`
+          ? `Sorry, only ${product.stock} piece(s) of "${product.name}" left in stock`
           : `Sorry, "${product.name}" is out of stock`
       );
     }

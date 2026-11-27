@@ -5,6 +5,7 @@ import Coupon from "../models/Coupon.js";
 import { computeOrderPricing, PricingError } from "./pricingService.js";
 import { sendOrderConfirmationEmail } from "./emailService.js";
 import { alertNewOrder, checkLowStock } from "./studioAlerts.js";
+import { stockPieces } from "../utils/packSize.js";
 import StudioSettings from "../models/StudioSettings.js";
 import Reference3D from "../models/Reference3D.js";
 import { completeReferencePack, resolveUploadedImagePath } from "./gemini3dAgent.js";
@@ -174,13 +175,13 @@ export const buildOrderFields = async (body, user) => {
   };
 };
 
-/** Quantity per catalog product in an order (placeholder-linked items carry no stock) */
-const stockLines = (items) => {
+/** Pieces per catalog product in an order (placeholder-linked items carry no stock) */
+export const stockLines = (items) => {
   const totals = new Map();
   for (const item of items || []) {
     if (!item.fromCatalog || !item.product) continue;
     const id = String(item.product);
-    totals.set(id, (totals.get(id) || 0) + item.quantity);
+    totals.set(id, (totals.get(id) || 0) + stockPieces(item));
   }
   return [...totals.entries()];
 };

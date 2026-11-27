@@ -5,6 +5,7 @@ import { verifyRazorpayPaymentResult } from "./paymentController.js";
 import {
   buildOrderFields,
   reserveStock,
+  stockLines,
   restoreStock,
   consumeCoupon,
   sendConfirmation,
@@ -59,9 +60,7 @@ export const createOrder = async (req, res) => {
     // Give stock back if the order was not created
     if (!order) {
       await Promise.all(
-        fields.items
-          .filter((i) => i.fromCatalog)
-          .map((i) => Product.updateOne({ _id: i.product }, { $inc: { stock: i.quantity } }))
+        stockLines(fields.items).map(([id, pieces]) => Product.updateOne({ _id: id }, { $inc: { stock: pieces } }))
       );
     }
   }
