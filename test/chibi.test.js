@@ -2,8 +2,10 @@ import { test } from "node:test";
 import assert from "node:assert/strict";
 import { startServer, mock, query } from "./helpers.js";
 import Order from "../src/models/Order.js";
+import StudioSettings from "../src/models/StudioSettings.js";
 
 test("Chibi Routes", async (t) => {
+  mock.method(StudioSettings, "findOne", () => query(null));
   const { url, close } = await startServer();
 
   try {

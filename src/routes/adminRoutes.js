@@ -11,6 +11,7 @@ const testEmailLimiter = rateLimit({ windowMs: 15 * 60 * 1000, max: 5, standardH
 import { setComingSoonOverride, isComingSoonActive } from "../controllers/configController.js";
 
 import StudioSettings from "../models/StudioSettings.js";
+import { getShippingSettings, parseShippingSettings } from "../services/shippingSettings.js";
 import { getStudioRecipients, sendTestOrderAlert } from "../services/studioAlerts.js";
 
 // Send a test email to the signed-in admin to check the SMTP settings
@@ -144,6 +145,32 @@ router.put(
       { upsert: true, setDefaultsOnInsert: true }
     );
     res.json({ success: true, enabled });
+  })
+);
+
+// Delivery charges (admin only)
+router.get(
+  "/shipping-settings",
+  protect,
+  admin,
+  asyncHandler(async (req, res) => {
+    res.json({ success: true, shipping: await getShippingSettings() });
+  })
+);
+
+router.put(
+  "/shipping-settings",
+  protect,
+  admin,
+  asyncHandler(async (req, res) => {
+    const { values, error } = parseShippingSettings(req.body);
+    if (error) return res.status(400).json({ success: false, message: error });
+    await StudioSettings.findOneAndUpdate(
+      { key: "default" },
+      { $set: { shipping: values } },
+      { upsert: true, setDefaultsOnInsert: true }
+    );
+    res.json({ success: true, shipping: values });
   })
 );
 

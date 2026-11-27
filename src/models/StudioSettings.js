@@ -14,6 +14,14 @@ export const DEFAULT_PRINT_COLORS = [
   { name: "Orange", hex: "#DD6B20", isActive: true },
 ];
 
+// Starting delivery charges (rupees) until an admin saves their own in the panel
+export const SHIPPING_DEFAULTS = {
+  freeShippingThreshold: 999,
+  standardFee: 99,
+  expressFee: 199,
+  midnightFee: 199,
+};
+
 const studioSettingsSchema = new mongoose.Schema(
   {
     key: { type: String, default: "default", unique: true },
@@ -26,6 +34,12 @@ const studioSettingsSchema = new mongoose.Schema(
     ],
     maxColorsPerModel: { type: Number, default: 4 },
     customKeepsakesEnabled: { type: Boolean, default: true },
+    shipping: {
+      freeShippingThreshold: { type: Number, min: 0, default: SHIPPING_DEFAULTS.freeShippingThreshold },
+      standardFee: { type: Number, min: 0, default: SHIPPING_DEFAULTS.standardFee },
+      expressFee: { type: Number, min: 0, default: SHIPPING_DEFAULTS.expressFee },
+      midnightFee: { type: Number, min: 0, default: SHIPPING_DEFAULTS.midnightFee },
+    },
     // Seasonal home page hero (e.g. Christmas); when disabled the standard hero is shown
     heroTheme: {
       enabled: { type: Boolean, default: false },

@@ -1,4 +1,5 @@
 import StudioSettings from "../models/StudioSettings.js";
+import { getShippingSettings } from "../services/shippingSettings.js";
 
 let comingSoonOverride = null;
 
@@ -35,7 +36,16 @@ export const getPublicConfig = async (req, res) => {
     console.warn("[config] Could not read custom keepsake setting:", err.message);
   }
 
+  // Left null if it can't be read, so the storefront never shows a wrong charge
+  let shipping = null;
+  try {
+    shipping = await getShippingSettings();
+  } catch (err) {
+    console.warn("[config] Could not read delivery charges:", err.message);
+  }
+
   res.json({
+    shipping,
     comingSoon,
     customKeepsakesEnabled,
     heroTheme,

@@ -3,6 +3,7 @@ import assert from "node:assert/strict";
 import mongoose from "mongoose";
 import { mock, query } from "./helpers.js";
 import Product from "../src/models/Product.js";
+import StudioSettings from "../src/models/StudioSettings.js";
 import Coupon from "../src/models/Coupon.js";
 import {
   computeOrderPricing,
@@ -37,6 +38,8 @@ const coupons = {
 };
 
 beforeEach(() => {
+  // No saved studio settings: delivery charges fall back to the starting values
+  mock.method(StudioSettings, "findOne", () => query(null));
   mock.method(Product, "find", () => query([product]));
   mock.method(Product, "findOne", () => query({ _id: CUSTOM_ID, images: ["/uploads/custom.jpg"] }));
   mock.method(Coupon, "findOne", (q) => query(coupons[q.code] || null));
@@ -144,6 +147,7 @@ describe("computeOrderPricing", () => {
 
   it("prices custom keepsakes gracefully when the catalog is completely empty", async () => {
     mock.restoreAll();
+    mock.method(StudioSettings, "findOne", () => query(null));
     mock.method(Product, "find", () => query([]));
     mock.method(Product, "findOne", () => query(null));
     const pricing = await computeOrderPricing({

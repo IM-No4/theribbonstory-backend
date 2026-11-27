@@ -3,6 +3,7 @@ import Product from "../models/Product.js";
 import Coupon from "../models/Coupon.js";
 import KeepsakeCategory from "../models/KeepsakeCategory.js";
 import { isObjectId } from "../utils/security.js";
+import { getShippingSettings } from "./shippingSettings.js";
 
 /**
  * Server-side price catalog for configurable items that are not stored as
@@ -26,10 +27,6 @@ export const HAMPER_CATALOG = {
   addons: { candle: 299, chocolates: 249, "fairy-lights": 149, "dry-fruits": 279, mug: 349 },
 };
 
-export const FREE_SHIPPING_THRESHOLD = 999;
-export const STANDARD_SHIPPING_FEE = 99;
-export const MIDNIGHT_DELIVERY_FEE = 199;
-export const EXPRESS_PRIORITY_FEE = 199;
 export const WEEKLY_KEEPSAKE_THRESHOLD = 5;
 const MAX_QUANTITY = 20;
 const MAX_LINE_ITEMS = 50;
@@ -268,12 +265,13 @@ export const computeOrderPricing = async ({ items, couponCode, deliverySlot }) =
 
   const itemsPrice = orderItems.reduce((sum, i) => sum + i.price * i.quantity, 0);
 
-  let shippingPrice = itemsPrice >= FREE_SHIPPING_THRESHOLD ? 0 : STANDARD_SHIPPING_FEE;
+  const shipping = await getShippingSettings();
+  let shippingPrice = itemsPrice >= shipping.freeShippingThreshold ? 0 : shipping.standardFee;
   if (typeof deliverySlot === "string" && deliverySlot.toLowerCase().includes("midnight")) {
-    shippingPrice += MIDNIGHT_DELIVERY_FEE;
+    shippingPrice += shipping.midnightFee;
   }
   if (typeof deliverySlot === "string" && deliverySlot.toLowerCase().includes("express")) {
-    shippingPrice += EXPRESS_PRIORITY_FEE;
+    shippingPrice += shipping.expressFee;
   }
 
   let coupon = null;

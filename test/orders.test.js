@@ -4,6 +4,7 @@ import crypto from "node:crypto";
 import mongoose from "mongoose";
 import { mock, query, startServer, fakeUser, authAs } from "./helpers.js";
 import Product from "../src/models/Product.js";
+import StudioSettings from "../src/models/StudioSettings.js";
 import Coupon from "../src/models/Coupon.js";
 import Order from "../src/models/Order.js";
 import User from "../src/models/User.js";
@@ -69,6 +70,8 @@ after(async () => {
 });
 
 beforeEach(() => {
+  // No saved studio settings: delivery charges fall back to the starting values
+  mock.method(StudioSettings, "findOne", () => query(null));
   process.env.RAZORPAY_KEY_ID = "rzp_test_key";
   process.env.RAZORPAY_KEY_SECRET = RZP_SECRET;
   process.env.RAZORPAY_WEBHOOK_SECRET = WEBHOOK_SECRET;

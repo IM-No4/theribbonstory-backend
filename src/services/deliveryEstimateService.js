@@ -1,11 +1,9 @@
 import Order from "../models/Order.js";
 import { checkServiceability as checkShiprocketServiceability } from "./shiprocketService.js";
+import { getShippingSettings } from "./shippingSettings.js";
 
 export const PRINTER_CAPACITY_PER_DAY = 1; // Single 3D printer capacity: 1 keepsake figurine per day
 export const DAILY_PRINT_SLOTS = 3; // Daily studio 3D printing capacity slots
-export const STANDARD_SHIPPING_FEE = 99;
-export const EXPRESS_PRIORITY_FEE = 199;
-export const FREE_SHIPPING_THRESHOLD = 999;
 
 /**
  * Calculates remaining print slots available for today's run based on active queue:
@@ -97,6 +95,7 @@ export async function calculateDeliveryEstimate({
   cod = 0,
 }) {
   const queue = await getPrinterQueueStats();
+  const shipping = await getShippingSettings();
 
   let hasCustom3D = Boolean(isCustom3D);
   let customUnits = 0;
@@ -203,7 +202,7 @@ export async function calculateDeliveryEstimate({
         ? `Includes custom 3D studio printing (${slotsLeftText.toLowerCase()}), ${customUnits} keepsake print time, and courier transit.`
         : `Ready-to-ship order. Dispatched within 24h via courier.`,
       courierName: "Standard Courier Delivery",
-      fee: STANDARD_SHIPPING_FEE,
+      fee: shipping.standardFee,
     },
     express: {
       id: "express",
@@ -218,12 +217,12 @@ export async function calculateDeliveryEstimate({
         ? `⚡ Priority Queue: Jumps ahead of standard orders to print next on our single studio printer + prioritized Air Express.`
         : `Priority dispatch via Air Express.`,
       courierName: "Priority Air Delivery",
-      priorityFee: EXPRESS_PRIORITY_FEE,
-      totalFee: STANDARD_SHIPPING_FEE + EXPRESS_PRIORITY_FEE,
+      priorityFee: shipping.expressFee,
+      totalFee: shipping.standardFee + shipping.expressFee,
     },
     recommendedCourier: shiprocketResult?.recommendedCourier || {
       courier_name: "Express Air Delivery",
-      rate: STANDARD_SHIPPING_FEE,
+      rate: shipping.standardFee,
     },
   };
 }

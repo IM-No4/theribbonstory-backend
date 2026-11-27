@@ -5,6 +5,7 @@ import { mock, query, startServer, fakeUser, authAs, mockRes } from "./helpers.j
 import User from "../src/models/User.js";
 import Order from "../src/models/Order.js";
 import Product from "../src/models/Product.js";
+import StudioSettings from "../src/models/StudioSettings.js";
 import { getTransporter } from "../src/services/emailService.js";
 import { handleWebhook } from "../src/controllers/shippingController.js";
 
@@ -21,6 +22,8 @@ after(async () => {
 });
 
 beforeEach(() => {
+  // No saved studio settings: delivery charges fall back to the starting values
+  mock.method(StudioSettings, "findOne", () => query(null));
   token = authAs(User, fakeUser({ role: "admin" }));
   const productId = new mongoose.Types.ObjectId();
   order = {

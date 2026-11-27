@@ -9,6 +9,7 @@ import { GoogleGenerativeAI } from "@google/generative-ai";
 import { mock, query, startServer, fakeUser, authAs } from "./helpers.js";
 import User from "../src/models/User.js";
 import Product from "../src/models/Product.js";
+import StudioSettings from "../src/models/StudioSettings.js";
 import Coupon from "../src/models/Coupon.js";
 import Order from "../src/models/Order.js";
 import Reference3D from "../src/models/Reference3D.js";
@@ -89,6 +90,8 @@ const regenerate = (sessionId, body) =>
   });
 
 beforeEach(async () => {
+  // No saved studio settings: delivery charges fall back to the starting values
+  mock.method(StudioSettings, "findOne", () => query(null));
   clientIp += 1; // each test is its own visitor for the per-IP preview limit
   geminiCalls = [];
   created = null;
@@ -137,6 +140,7 @@ describe("Customer 3D preview", () => {
 
   it("never presents a placeholder as the customer's design when Gemini is unavailable", async () => {
     mock.restoreAll();
+    mock.method(StudioSettings, "findOne", () => query(null));
     stubSessions();
     delete process.env.GEMINI_API_KEY;
     const body = await (await uploadPreview()).json();
