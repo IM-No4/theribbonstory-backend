@@ -30,6 +30,7 @@ import studio3dRoutes from "./routes/studio3dRoutes.js";
 import chibiRoutes from "./routes/chibiRoutes.js";
 import keepsakeCategoryRoutes from "./routes/keepsakeCategoryRoutes.js";
 import insightsRoutes from "./routes/insightsRoutes.js";
+import cartRoutes from "./routes/cartRoutes.js";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 dotenv.config({ path: path.join(__dirname, "..", ".env") });
@@ -144,6 +145,7 @@ app.use("/api/auth", authLimiter, authRoutes);
 app.use("/api/products", productRoutes);
 app.use("/api/categories", categoryRoutes);
 app.use("/api/orders", orderRoutes);
+app.use("/api/cart", cartRoutes);
 app.use("/api/payments", paymentRoutes);
 app.use("/api/upload", uploadRoutes);
 app.use("/api/coupons", couponRoutes);

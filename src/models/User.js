@@ -23,6 +23,9 @@ const userSchema = new mongoose.Schema(
     password: { type: String, required: true, minlength: 6 },
     role: { type: String, enum: ["customer", "admin"], default: "customer" },
     addresses: [addressSchema],
+    // Abandoned cart emails
+    cartReminderOptOut: { type: Boolean, default: false },
+    lastCartReminderAt: Date,
     resetPasswordToken: { type: String, select: false },
     resetPasswordExpires: { type: Date, select: false },
     // Embedded in login tokens; bumping it signs the account out on every device

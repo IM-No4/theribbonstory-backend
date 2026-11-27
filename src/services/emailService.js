@@ -734,3 +734,74 @@ export const sendTestEmail = async ({ to, type = "NOREPLY" }) => {
     return { ok: false, message: `Email failed: ${reason}.` };
   }
 };
+
+export const CART_REMINDER_SUBJECT = "Your cart is calling 💝";
+export const CART_REMINDER_MESSAGE =
+  "You left some lovely little things in your cart. They're still waiting for you, whenever you're ready.";
+
+/**
+ * Reminder about items left in the cart, sent by an admin. Unlike the order
+ * emails this throws on failure, so the admin knows it wasn't sent.
+ */
+export const sendCartReminderEmail = async ({ to, name, items, total, subject, message, coupon, unsubscribeUrl }) => {
+  const mailClient = getTransporter("NOREPLY");
+  if (mailClient.isMock && process.env.NODE_ENV === "production") {
+    throw new Error("Email is not set up on the server (SMTP settings are missing)");
+  }
+  const cartUrl = `${storefrontUrl()}/cart?utm_source=email&utm_medium=reminder&utm_campaign=abandoned_cart`;
+  const rupees = (n) => `₹${Math.round(n).toLocaleString("en-IN")}`;
+  const title = subject || CART_REMINDER_SUBJECT;
+  const intro = message || CART_REMINDER_MESSAGE;
+
+  const rows = items
+    .map(
+      (i) => `
+      <tr>
+        <td style="padding:10px 0;width:72px;"><img src="${esc(absoluteImageUrl(i.image))}" width="60" height="60" alt="" style="border-radius:10px;object-fit:cover;display:block;"></td>
+        <td style="padding:10px 8px;">
+          <strong style="color:#4A1F29;">${esc(i.name)}</strong><br>
+          <span style="font-size:12px;color:#8A6D74;">${esc([...(i.options || []).map((o) => o.value), `Qty ${i.quantity}`].join(" · "))}</span>
+        </td>
+        <td style="padding:10px 0;text-align:right;white-space:nowrap;font-weight:600;color:#4A1F29;">${rupees(i.price * i.quantity)}</td>
+      </tr>`
+    )
+    .join("");
+
+  const offer = coupon
+    ? `<div style="margin:20px 0;padding:16px;border:2px dashed #D68893;border-radius:14px;text-align:center;">
+        <div style="font-size:12px;color:#8A6D74;">A little something from us</div>
+        <div style="font-size:22px;font-weight:700;letter-spacing:2px;color:#4A1F29;">${esc(coupon.code)}</div>
+        <div style="font-size:12px;color:#8A6D74;">${esc(coupon.description || "Apply this code in your cart")}</div>
+      </div>`
+    : "";
+
+  const content = `
+    <h2 class="heading">${esc(title)}</h2>
+    <p>Hi ${esc((name || "there").split(" ")[0])},</p>
+    <p>${esc(intro).replace(/\n/g, "<br>")}</p>
+    <table width="100%" cellpadding="0" cellspacing="0">${rows}</table>
+    <div class="divider"></div>
+    <p style="text-align:right;font-size:16px;"><strong>Cart total: ${rupees(total)}</strong></p>
+    ${offer}
+    <p style="font-size:11px;color:#A89096;">Prices and availability can change. Don't want these reminders? <a href="${esc(unsubscribeUrl)}">Unsubscribe</a>.</p>
+  `;
+
+  await mailClient.sendMail({
+    from: EMAIL_SENDERS.NOREPLY,
+    to,
+    subject: title,
+    html: renderEmailTemplate({ title, preheader: intro, content, actionButton: { text: "Return to my cart", url: cartUrl } }),
+    text: [
+      `Hi ${name || "there"},`,
+      intro,
+      ...items.map((i) => `- ${i.name} x ${i.quantity}: ${rupees(i.price * i.quantity)}`),
+      `Cart total: ${rupees(total)}`,
+      coupon ? `Use code ${coupon.code}` : "",
+      `Return to your cart: ${cartUrl}`,
+      `Unsubscribe: ${unsubscribeUrl}`,
+    ]
+      .filter(Boolean)
+      .join("\n"),
+    headers: { "List-Unsubscribe": `<${unsubscribeUrl}>`, "List-Unsubscribe-Post": "List-Unsubscribe=One-Click" },
+  });
+};
