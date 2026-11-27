@@ -51,7 +51,8 @@ export const getProducts = async (req, res) => {
 };
 
 export const getProductBySlug = async (req, res) => {
-  const product = await Product.findOne({ slug: req.params.slug });
+  // Inactive products are hidden from the storefront, including by direct link
+  const product = await Product.findOne({ slug: req.params.slug, isActive: { $ne: false } });
   if (!product) return res.status(404).json({ message: "Product not found" });
   return res.json({ product });
 };
