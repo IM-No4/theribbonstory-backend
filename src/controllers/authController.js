@@ -189,11 +189,39 @@ export const updateProfile = async (req, res) => {
   return res.json({ user: user.toSafeObject(), message: "Profile updated successfully" });
 };
 
+const ADDRESS_FIELDS = ["label", "name", "line1", "line2", "city", "state", "postalCode", "country", "phone"];
+const MAX_ADDRESSES = 20;
+
 export const addAddress = async (req, res) => {
+  const address = {};
+  for (const field of ADDRESS_FIELDS) {
+    if (typeof req.body?.[field] === "string") address[field] = req.body[field].trim().slice(0, 200);
+  }
+  if (!address.line1 || !address.city || !address.postalCode) {
+    return res.status(400).json({ message: "Street, city and PIN code are required" });
+  }
+
   const user = await User.findById(req.user._id);
-  user.addresses.push(req.body);
+  // Saving the same address again updates it instead of listing it twice
+  const sameKey = (a) =>
+    [a.name, a.line1, a.line2, a.postalCode, a.phone].map((v) => String(v || "").trim().toLowerCase()).join("|");
+  let saved = user.addresses.find((a) => sameKey(a) === sameKey(address));
+  const isNew = !saved;
+  if (isNew) {
+    if (user.addresses.length >= MAX_ADDRESSES) {
+      return res.status(400).json({ message: `You can save up to ${MAX_ADDRESSES} addresses. Delete one first.` });
+    }
+    user.addresses.push(address);
+    saved = user.addresses[user.addresses.length - 1];
+  } else {
+    Object.assign(saved, address);
+  }
   await user.save();
-  return res.status(201).json({ addresses: user.addresses, message: "Address added successfully" });
+  return res.status(isNew ? 201 : 200).json({
+    addresses: user.addresses,
+    address: saved,
+    message: isNew ? "Address added successfully" : "Address saved",
+  });
 };
 
 export const deleteAddress = async (req, res) => {
